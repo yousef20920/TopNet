@@ -1,7 +1,7 @@
 import { Link } from 'react-router-dom';
 import { motion } from 'framer-motion';
 import { ArrowRight, Box, Cpu, Shield, Zap } from 'lucide-react';
-import { cn } from '../lib/utils';
+// import { cn } from '../lib/utils';
 
 export function LandingPage() {
     return (

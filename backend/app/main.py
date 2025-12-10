@@ -1,11 +1,15 @@
 # app/main.py
 """FastAPI application entry point."""
 
+from dotenv import load_dotenv
+load_dotenv()  # Load .env file before anything else
+
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.api import topologies_router
 from app.api.deploy import router as deploy_router
+from app.api.aws_info import router as aws_router
 
 app = FastAPI(
     title="TopNet API",
@@ -25,6 +29,7 @@ app.add_middleware(
 # Include routers
 app.include_router(topologies_router)
 app.include_router(deploy_router)
+app.include_router(aws_router)
 
 
 @app.get("/health")

@@ -17,7 +17,7 @@ import { generateTopology, generateTerraform } from '../api/topologyApi';
 import { TopologyCanvas } from '../components/TopologyCanvas';
 import { NodeInspector } from '../components/NodeInspector';
 import { ValidationPanel } from '../components/ValidationPanel';
-import { DeployPanel } from '../components/DeployPanel';
+import { DeploymentConsole } from '../components/DeploymentConsole';
 
 export function EditorPage() {
     const [prompt, setPrompt] = useState('');
@@ -27,7 +27,7 @@ export function EditorPage() {
     const [isLoading, setIsLoading] = useState(false);
     const [terraformOutput, setTerraformOutput] = useState<string | null>(null);
     const [error, setError] = useState<string | null>(null);
-    const [isDeployPanelOpen, setIsDeployPanelOpen] = useState(false);
+    const [isConsoleOpen, setIsConsoleOpen] = useState(false);
 
     const handleGenerate = async () => {
         setIsLoading(true);
@@ -114,7 +114,7 @@ export function EditorPage() {
                                 Wait for Terraform
                             </button>
                             <button
-                                onClick={() => setIsDeployPanelOpen(true)}
+                                onClick={() => setIsConsoleOpen(true)}
                                 disabled={isLoading}
                                 className="flex items-center gap-2 px-3 py-1.5 rounded-md bg-blue-600 hover:bg-blue-500 text-white text-xs font-medium transition-colors disabled:opacity-50 shadow-lg shadow-blue-500/20"
                             >
@@ -230,11 +230,11 @@ export function EditorPage() {
                 </div>
             </div>
 
-            {/* Deploy Logic */}
-            <DeployPanel
+            {/* Deployment Console */}
+            <DeploymentConsole
                 topology={topology}
-                isOpen={isDeployPanelOpen}
-                onClose={() => setIsDeployPanelOpen(false)}
+                isOpen={isConsoleOpen}
+                onClose={() => setIsConsoleOpen(false)}
             />
         </div>
     );
