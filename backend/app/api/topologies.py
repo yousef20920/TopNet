@@ -100,7 +100,7 @@ def get_hardcoded_topology() -> TopologyGraph:
             region="us-east-1",
             az="us-east-1a",
             props={
-                "instance_type": "t2.micro",
+                "instance_type": "t3.micro",
                 "subnet_id": "subnet-public-1",
                 "security_groups": ["sg-web"],
             },
@@ -167,27 +167,228 @@ class TerraformResponse(BaseModel):
 @router.post("/generate", response_model=GenerateResponse)
 async def generate_topology(request: GenerateRequest) -> GenerateResponse:
     """Generate a topology from a natural language prompt."""
+    from app.core.nlp import parse_nl_to_spec
+    from app.core.builder import build_topology_from_spec
+
     print(f"[topologies/generate] Received prompt: '{request.prompt or '(no prompt)'}'")
 
-    # For Phase 1, return hardcoded topology regardless of prompt
-    topology = get_hardcoded_topology()
-
-    validation = [
-        ValidationResult(
-            id="val-1",
-            severity=Severity.INFO,
-            message="Topology generated successfully (hardcoded for Phase 1)",
+    # If no prompt provided, return a simple default topology
+    if not request.prompt or not request.prompt.strip():
+        topology = get_hardcoded_topology()
+        return GenerateResponse(
+            topology=topology,
+            validation=[
+                ValidationResult(
+                    id="val-1",
+                    severity=Severity.INFO,
+                    message="Using default topology (no prompt provided)",
+                ),
+                ValidationResult(
+                    id="val-hint",
+                    severity=Severity.INFO,
+                    message="💡 Try: 'Create 2 web servers with a PostgreSQL database'",
+                ),
+            ],
         )
-    ]
 
-    return GenerateResponse(topology=topology, validation=validation)
+    # Phase 2: Parse NL -> Spec -> Graph
+    try:
+        # Step 1: Parse natural language to TopologySpec
+        spec = parse_nl_to_spec(request.prompt)
+        print(f"[topologies/generate] Parsed spec: {spec.model_dump_json(indent=2)}")
+
+        # Check if prompt wasn't understood (no components)
+        if not spec.components:
+            topology = get_hardcoded_topology()
+            return GenerateResponse(
+                topology=topology,
+                validation=[
+                    ValidationResult(
+                        id="val-1",
+                        severity=Severity.WARNING,
+                        message="Couldn't understand the prompt. Showing example topology.",
+                    ),
+                    ValidationResult(
+                        id="val-hint-1",
+                        severity=Severity.INFO,
+                        message="💡 Try describing your infrastructure needs, for example:",
+                    ),
+                    ValidationResult(
+                        id="val-hint-2",
+                        severity=Severity.INFO,
+                        message="• 'Create a VPC with 2 web servers and a PostgreSQL database'",
+                    ),
+                    ValidationResult(
+                        id="val-hint-3",
+                        severity=Severity.INFO,
+                        message="• 'Deploy 3 EC2 instances with RDS in us-west-2'",
+                    ),
+                    ValidationResult(
+                        id="val-hint-4",
+                        severity=Severity.INFO,
+                        message="• 'High availability web tier with MySQL'",
+                    ),
+                ],
+            )
+
+        # Step 2: Build TopologyGraph from spec
+        topology = build_topology_from_spec(spec)
+        print(f"[topologies/generate] Built topology with {len(topology.nodes)} nodes, {len(topology.edges)} edges")
+
+        # Start with info messages about what was generated
+        validation = [
+            ValidationResult(
+                id="val-1",
+                severity=Severity.INFO,
+                message=f"✅ Topology generated with {len(topology.nodes)} resources",
+            ),
+            ValidationResult(
+                id="val-2",
+                severity=Severity.INFO,
+                message=f"📍 Region: {spec.region}",
+            ),
+        ]
+
+        # Add component info to validation
+        for i, comp in enumerate(spec.components):
+            validation.append(
+                ValidationResult(
+                    id=f"val-comp-{i}",
+                    severity=Severity.INFO,
+                    message=f"• {comp.role.value}: {comp.description} (qty: {comp.quantity or 'default'})",
+                )
+            )
+
+        # Phase 3: Run validation passes
+        from app.validation import run_all_validations
+        validation_results = run_all_validations(topology)
+        
+        if validation_results:
+            validation.append(
+                ValidationResult(
+                    id="val-separator",
+                    severity=Severity.INFO,
+                    message="─── Validation Results ───",
+                )
+            )
+            validation.extend(validation_results)
+        else:
+            validation.append(
+                ValidationResult(
+                    id="val-all-good",
+                    severity=Severity.INFO,
+                    message="✓ All validation checks passed",
+                )
+            )
+
+        return GenerateResponse(topology=topology, validation=validation)
+
+    except Exception as e:
+        print(f"[topologies/generate] Error: {e}")
+        # Fall back to hardcoded topology on error
+        topology = get_hardcoded_topology()
+        return GenerateResponse(
+            topology=topology,
+            validation=[
+                ValidationResult(
+                    id="val-err",
+                    severity=Severity.WARNING,
+                    message=f"Failed to parse prompt, using default topology: {str(e)}",
+                ),
+            ],
+        )
+
+
+class GenerateFromSpecRequest(BaseModel):
+    spec: dict
+
+
+@router.post("/generate-from-spec", response_model=GenerateResponse)
+async def generate_from_spec(request: GenerateFromSpecRequest) -> GenerateResponse:
+    """Generate a topology from a pre-built TopologySpec (from chat)."""
+    from app.core.builder import build_topology_from_spec, TopologySpec
+
+    print(f"[topologies/generate-from-spec] Received spec: {request.spec}")
+
+    try:
+        # Convert dict to TopologySpec
+        spec = TopologySpec.model_validate(request.spec)
+        print(f"[topologies/generate-from-spec] Validated spec: {spec.model_dump_json(indent=2)}")
+
+        # Build topology from spec
+        topology = build_topology_from_spec(spec)
+        print(f"[topologies/generate-from-spec] Built topology with {len(topology.nodes)} nodes, {len(topology.edges)} edges")
+
+        validation = [
+            ValidationResult(
+                id="val-1",
+                severity=Severity.INFO,
+                message=f"✅ Topology generated with {len(topology.nodes)} resources",
+            ),
+            ValidationResult(
+                id="val-2",
+                severity=Severity.INFO,
+                message=f"📍 Region: {spec.region}",
+            ),
+        ]
+
+        # Add component info to validation
+        for i, comp in enumerate(spec.components):
+            validation.append(
+                ValidationResult(
+                    id=f"val-comp-{i}",
+                    severity=Severity.INFO,
+                    message=f"• {comp.role.value}: {comp.description} (qty: {comp.quantity or 'default'})",
+                )
+            )
+
+        # Phase 3: Run validation passes
+        from app.validation import run_all_validations
+        validation_results = run_all_validations(topology)
+        
+        if validation_results:
+            validation.append(
+                ValidationResult(
+                    id="val-separator",
+                    severity=Severity.INFO,
+                    message="─── Validation Results ───",
+                )
+            )
+            validation.extend(validation_results)
+        else:
+            validation.append(
+                ValidationResult(
+                    id="val-all-good",
+                    severity=Severity.INFO,
+                    message="✓ All validation checks passed",
+                )
+            )
+
+        return GenerateResponse(topology=topology, validation=validation)
+
+    except Exception as e:
+        print(f"[topologies/generate-from-spec] Error: {e}")
+        topology = get_hardcoded_topology()
+        return GenerateResponse(
+            topology=topology,
+            validation=[
+                ValidationResult(
+                    id="val-err",
+                    severity=Severity.WARNING,
+                    message=f"Failed to build topology from spec: {str(e)}",
+                ),
+            ],
+        )
 
 
 @router.post("/validate", response_model=ValidateResponse)
 async def validate_topology(request: ValidateRequest) -> ValidateResponse:
     """Validate a topology graph."""
+    from app.validation import run_all_validations
+    
     validation: list[ValidationResult] = []
 
+    # Basic checks
     if not request.topology.nodes:
         validation.append(
             ValidationResult(
@@ -196,13 +397,19 @@ async def validate_topology(request: ValidateRequest) -> ValidateResponse:
                 message="Topology must have at least one node",
             )
         )
+        return ValidateResponse(validation=validation)
 
-    if not validation:
+    # Run all validation passes
+    validation_results = run_all_validations(request.topology)
+    
+    if validation_results:
+        validation.extend(validation_results)
+    else:
         validation.append(
             ValidationResult(
                 id="val-ok",
                 severity=Severity.INFO,
-                message="Topology passed basic validation",
+                message="✓ All validation checks passed",
             )
         )
 
@@ -219,3 +426,40 @@ async def generate_terraform(request: TerraformRequest) -> TerraformResponse:
     content = terraform_to_json(tf_config)
 
     return TerraformResponse(files=[TerraformFile(filename="main.tf.json", content=content)])
+
+
+class CostEstimateRequest(BaseModel):
+    topology: TopologyGraph
+
+
+class CostItem(BaseModel):
+    resource: str
+    type: str
+    hourly: float
+    monthly: float
+
+
+class CostEstimateResponse(BaseModel):
+    items: list[CostItem]
+    hourly_total: float
+    monthly_total: float
+    currency: str
+    note: str
+    free_tier_note: str | None = None
+
+
+@router.post("/estimate-cost", response_model=CostEstimateResponse)
+async def estimate_cost(request: CostEstimateRequest) -> CostEstimateResponse:
+    """Estimate monthly cost for a topology."""
+    from app.core.pricing import estimate_topology_cost
+    
+    cost_data = estimate_topology_cost(request.topology)
+    
+    return CostEstimateResponse(
+        items=[CostItem(**item) for item in cost_data["items"]],
+        hourly_total=cost_data["hourly_total"],
+        monthly_total=cost_data["monthly_total"],
+        currency=cost_data["currency"],
+        note=cost_data["note"],
+        free_tier_note=cost_data.get("free_tier_note"),
+    )

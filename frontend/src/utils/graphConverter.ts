@@ -2,91 +2,40 @@
 // Convert TopologyGraph to React Flow nodes and edges
 
 import type { Node, Edge } from '@xyflow/react';
-import type { BaseNode, Edge as TopologyEdge, TopologyGraph, NodeKind } from '../types/topology';
+import type { Edge as TopologyEdge, TopologyGraph } from '../types/topology';
+import dagre from 'dagre';
 
-// Color scheme for different node kinds
-const NODE_COLORS: Record<NodeKind, string> = {
-  network: '#4F46E5',        // Indigo - VPC
-  subnet: '#10B981',         // Emerald - Subnets
-  security_group: '#F59E0B', // Amber - Security Groups
-  load_balancer: '#8B5CF6',  // Violet - ALB
-  compute_instance: '#3B82F6', // Blue - EC2
-  database: '#EF4444',       // Red - RDS
-  gateway: '#06B6D4',        // Cyan - Gateways
-  traffic_generator: '#EC4899', // Pink
-  route_table: '#6B7280',    // Gray - Route Tables
-};
+// Use dagre to calculate layout
+const getLayoutedElements = (nodes: Node[], edges: Edge[]) => {
+  const dagreGraph = new dagre.graphlib.Graph();
+  dagreGraph.setDefaultEdgeLabel(() => ({}));
 
-// Icons/labels for node kinds
-const NODE_LABELS: Record<NodeKind, string> = {
-  network: '🌐 VPC',
-  subnet: '📦 Subnet',
-  security_group: '🔒 SG',
-  load_balancer: '⚖️ ALB',
-  compute_instance: '💻 EC2',
-  database: '🗄️ RDS',
-  gateway: '🚪 Gateway',
-  traffic_generator: '📡 Traffic Gen',
-  route_table: '🛣️ Route Table',
-};
+  const nodeWidth = 220; // Width matching CustomNode
+  const nodeHeight = 80; // Height matching CustomNode
 
-// Calculate positions based on node kind (simple layered layout)
-function calculatePosition(node: BaseNode, _index: number, allNodes: BaseNode[]): { x: number; y: number } {
-  const layerOrder: NodeKind[] = [
-    'network',
-    'gateway',
-    'route_table',
-    'subnet',
-    'security_group',
-    'load_balancer',
-    'compute_instance',
-    'database',
-    'traffic_generator',
-  ];
+  dagreGraph.setGraph({ rankdir: 'LR' }); // Left to Right layout
 
-  const layer = layerOrder.indexOf(node.kind);
-  const nodesInLayer = allNodes.filter(n => n.kind === node.kind);
-  const indexInLayer = nodesInLayer.findIndex(n => n.id === node.id);
-  
-  const xSpacing = 250;
-  const ySpacing = 120;
-  const layerWidth = nodesInLayer.length * xSpacing;
-  const startX = (1200 - layerWidth) / 2 + 100;
-
-  return {
-    x: startX + indexInLayer * xSpacing,
-    y: 50 + layer * ySpacing,
-  };
-}
-
-export function convertToReactFlowNodes(topology: TopologyGraph): Node[] {
-  return topology.nodes.map((node, index) => {
-    const position = calculatePosition(node, index, topology.nodes);
-    
-    return {
-      id: node.id,
-      type: 'default',
-      position,
-      data: {
-        label: (
-          `${NODE_LABELS[node.kind] || node.kind}\n${node.name || node.id}`
-        ),
-        ...node,
-      },
-      style: {
-        background: NODE_COLORS[node.kind] || '#6B7280',
-        color: 'white',
-        border: '2px solid #374151',
-        borderRadius: '8px',
-        padding: '10px',
-        fontSize: '12px',
-        fontWeight: 500,
-        minWidth: '120px',
-        textAlign: 'center' as const,
-      },
-    };
+  nodes.forEach((node) => {
+    dagreGraph.setNode(node.id, { width: nodeWidth, height: nodeHeight });
   });
-}
+
+  edges.forEach((edge) => {
+    dagreGraph.setEdge(edge.source, edge.target);
+  });
+
+  dagre.layout(dagreGraph);
+
+  nodes.forEach((node) => {
+    const nodeWithPosition = dagreGraph.node(node.id);
+    node.position = {
+      x: nodeWithPosition.x - nodeWidth / 2,
+      y: nodeWithPosition.y - nodeHeight / 2,
+    };
+    return node;
+  });
+
+  return { nodes, edges };
+};
 
 // Edge styles based on kind
 const EDGE_STYLES: Record<string, { stroke: string; strokeDasharray?: string }> = {
@@ -100,7 +49,7 @@ const EDGE_STYLES: Record<string, { stroke: string; strokeDasharray?: string }> 
 export function convertToReactFlowEdges(topology: TopologyGraph): Edge[] {
   return topology.edges.map((edge: TopologyEdge) => {
     const style = EDGE_STYLES[edge.kind] || { stroke: '#9CA3AF' };
-    
+
     return {
       id: edge.id,
       source: edge.from,
@@ -116,4 +65,27 @@ export function convertToReactFlowEdges(topology: TopologyGraph): Edge[] {
       data: { ...edge } as Record<string, unknown>,
     };
   });
+}
+
+export function convertToReactFlowNodes(topology: TopologyGraph): Node[] {
+  // Create initial nodes without position
+  const initialNodes: Node[] = topology.nodes.map((node) => {
+    return {
+      id: node.id,
+      type: 'custom', // Use custom node type
+      position: { x: 0, y: 0 }, // Position will be set by dagre
+      data: {
+        label: node.name || node.id,
+        ...node,
+      },
+    };
+  });
+
+  // Calculate edges for layout (we need edges to calculate node positions)
+  const initialEdges = convertToReactFlowEdges(topology);
+
+  // Apply dagre layout
+  const { nodes } = getLayoutedElements(initialNodes, initialEdges);
+
+  return nodes;
 }

@@ -19,10 +19,21 @@
     animation: gradient-x 15s ease infinite;
   }
 
+  .glass {
+    @apply bg-black/40 backdrop-blur-md border border-white/10;
+  }
+
+  .glass-hover {
+    @apply hover:bg-white/5 transition-colors duration-200;
+  }
+
   @keyframes gradient-x {
-    0%, 100% {
+
+    0%,
+    100% {
       background-position: 0% 50%;
     }
+
     50% {
       background-position: 100% 50%;
     }
@@ -32,11 +43,32 @@
 :root {
   font-family: 'Inter', system-ui, -apple-system, sans-serif;
   color-scheme: dark;
+
+  /* Theme Variables */
+  --bg-primary: #030712;
+  /* Gray 950 */
+  --bg-secondary: #0f172a;
+  /* Slate 900 */
+  --bg-tertiary: #1e293b;
+  /* Slate 800 */
+
+  --accent-primary: #6366f1;
+  /* Indigo 500 */
+  --accent-hover: #4f46e5;
+  /* Indigo 600 */
+
+  --text-primary: #f8fafc;
+  /* Slate 50 */
+  --text-secondary: #94a3b8;
+  /* Slate 400 */
+
+  --border-subtle: rgba(255, 255, 255, 0.08);
 }
 
 body {
   margin: 0;
   min-height: 100vh;
-  background-color: #030712;
-  color: white;
+  background-color: var(--bg-primary);
+  color: var(--text-primary);
+  -webkit-font-smoothing: antialiased;
 }

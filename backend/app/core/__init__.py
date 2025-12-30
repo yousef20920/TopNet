@@ -13,6 +13,8 @@ from .types import (
     TopologyGraph,
     ValidationResult,
 )
+from .builder import TopologyBuilder, build_topology_from_spec
+from .nlp import parse_nl_to_spec, parse_nl_to_spec_rules
 
 __all__ = [
     "BaseNode",
@@ -24,7 +26,11 @@ __all__ = [
     "Provider",
     "Severity",
     "TerraformFile",
+    "TopologyBuilder",
     "TopologyGraph",
     "TopologySpec",
     "ValidationResult",
+    "build_topology_from_spec",
+    "parse_nl_to_spec",
+    "parse_nl_to_spec_rules",
 ]

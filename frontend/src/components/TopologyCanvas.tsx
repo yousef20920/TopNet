@@ -1,7 +1,7 @@
 // src/components/TopologyCanvas.tsx
 // React Flow graph canvas for displaying topology
 
-import { useCallback } from 'react';
+import { useCallback, useEffect } from 'react';
 import {
   ReactFlow,
   MiniMap,
@@ -20,28 +20,34 @@ import '@xyflow/react/dist/style.css';
 import type { TopologyGraph, BaseNode } from '../types/topology';
 import { convertToReactFlowNodes, convertToReactFlowEdges } from '../utils/graphConverter';
 
+import { CustomNode } from './CustomNode';
+
+const nodeTypes = {
+  custom: CustomNode,
+};
+
 interface TopologyCanvasProps {
   topology: TopologyGraph | null;
   onNodeSelect: (node: BaseNode | null) => void;
 }
 
 export function TopologyCanvas({ topology, onNodeSelect }: TopologyCanvasProps) {
-  const initialNodes = topology ? convertToReactFlowNodes(topology) : [];
-  const initialEdges = topology ? convertToReactFlowEdges(topology) : [];
-
-  const [nodes, setNodes, onNodesChange] = useNodesState(initialNodes);
-  const [edges, setEdges, onEdgesChange] = useEdgesState(initialEdges);
+  const [nodes, setNodes, onNodesChange] = useNodesState<Node>([]);
+  const [edges, setEdges, onEdgesChange] = useEdgesState<Edge>([]);
 
   // Update nodes/edges when topology changes
-  if (topology) {
-    const newNodes = convertToReactFlowNodes(topology);
-    const newEdges = convertToReactFlowEdges(topology);
-    
-    if (JSON.stringify(nodes.map(n => n.id)) !== JSON.stringify(newNodes.map(n => n.id))) {
+  useEffect(() => {
+    if (topology) {
+      console.log('[TopologyCanvas] Updating with topology:', topology.name, topology.nodes.length, 'nodes');
+      const newNodes = convertToReactFlowNodes(topology);
+      const newEdges = convertToReactFlowEdges(topology);
       setNodes(newNodes);
       setEdges(newEdges);
+    } else {
+      setNodes([]);
+      setEdges([]);
     }
-  }
+  }, [topology, setNodes, setEdges]);
 
   const onNodeClick = useCallback((_event: React.MouseEvent, node: Node) => {
     const baseNode = node.data as unknown as BaseNode;
@@ -72,15 +78,32 @@ export function TopologyCanvas({ topology, onNodeSelect }: TopologyCanvasProps) 
         onEdgesChange={onEdgesChange as OnEdgesChange<Edge>}
         onNodeClick={onNodeClick}
         onPaneClick={onPaneClick}
+        nodeTypes={nodeTypes}
         fitView
         attributionPosition="bottom-left"
       >
-        <Controls />
-        <MiniMap 
-          nodeColor={(node) => (node.style?.background as string) || '#6B7280'}
-          style={{ background: '#1F2937' }}
+        <Controls className="bg-gray-800 border-gray-700 text-white fill-white" />
+        <MiniMap
+          nodeColor={(node) => {
+            const kind = node.data.kind as string;
+            // Matches NODE_COLORS in CustomNode
+            switch (kind) {
+              case 'network': return '#4F46E5';
+              case 'subnet': return '#10B981';
+              case 'security_group': return '#F59E0B';
+              case 'load_balancer': return '#8B5CF6';
+              case 'compute_instance': return '#3B82F6';
+              case 'database': return '#EF4444';
+              case 'gateway': return '#06B6D4';
+              case 'traffic_generator': return '#EC4899';
+              case 'route_table': return '#6B7280';
+              default: return '#6B7280';
+            }
+          }}
+          style={{ background: '#111827' }}
+          maskColor="#1F2937"
         />
-        <Background variant={BackgroundVariant.Dots} gap={12} size={1} color="#374151" />
+        <Background variant={BackgroundVariant.Dots} gap={24} size={1} color="#374151" />
       </ReactFlow>
     </div>
   );

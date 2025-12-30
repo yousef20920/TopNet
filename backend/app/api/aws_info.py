@@ -144,11 +144,14 @@ async def get_aws_dashboard(region: str = "us-east-1") -> AWSDashboard:
                     elif state == "stopped":
                         stopped += 1
             
+            # Filter out terminated instances for display
+            active_instances = [i for i in instances if i["state"] != "terminated"]
+            
             dashboard.resources.ec2 = EC2Summary(
-                total=len(instances),
+                total=len(active_instances),
                 running=running,
                 stopped=stopped,
-                instances=instances[:10],  # Limit to first 10
+                instances=active_instances[:10],  # Limit to first 10
             )
         except Exception as e:
             print(f"Error fetching EC2: {e}")
@@ -236,3 +239,130 @@ async def get_aws_regions() -> list[dict[str, str]]:
         {"code": "ap-southeast-1", "name": "Asia Pacific (Singapore)"},
         {"code": "ap-southeast-2", "name": "Asia Pacific (Sydney)"},
     ]
+
+
+class CleanupResponse(BaseModel):
+    """Cleanup operation response."""
+    success: bool
+    deleted: dict[str, list[str]]
+    errors: list[str]
+
+
+@router.post("/cleanup", response_model=CleanupResponse)
+async def cleanup_topnet_resources(region: str = "us-east-2") -> CleanupResponse:
+    """Delete all TopNet-managed resources (VPCs, subnets, security groups, etc.)."""
+    deleted: dict[str, list[str]] = {
+        "instances": [],
+        "security_groups": [],
+        "subnets": [],
+        "route_tables": [],
+        "internet_gateways": [],
+        "nat_gateways": [],
+        "vpcs": [],
+    }
+    errors: list[str] = []
+    
+    try:
+        ec2 = _get_boto3_client("ec2", region)
+        
+        # Find TopNet-managed VPCs (tagged with ManagedBy: TopNet)
+        vpcs_response = ec2.describe_vpcs(
+            Filters=[{"Name": "tag:ManagedBy", "Values": ["TopNet"]}]
+        )
+        
+        for vpc in vpcs_response.get("Vpcs", []):
+            vpc_id = vpc["VpcId"]
+            vpc_name = ""
+            for tag in vpc.get("Tags", []):
+                if tag["Key"] == "Name":
+                    vpc_name = tag["Value"]
+            
+            try:
+                # 1. Terminate EC2 instances in this VPC
+                instances = ec2.describe_instances(
+                    Filters=[{"Name": "vpc-id", "Values": [vpc_id]}]
+                )
+                instance_ids = []
+                for res in instances.get("Reservations", []):
+                    for inst in res.get("Instances", []):
+                        if inst["State"]["Name"] != "terminated":
+                            instance_ids.append(inst["InstanceId"])
+                
+                if instance_ids:
+                    ec2.terminate_instances(InstanceIds=instance_ids)
+                    # Wait for termination
+                    waiter = ec2.get_waiter("instance_terminated")
+                    waiter.wait(InstanceIds=instance_ids)
+                    deleted["instances"].extend(instance_ids)
+                
+                # 2. Delete NAT Gateways
+                nat_gws = ec2.describe_nat_gateways(
+                    Filters=[{"Name": "vpc-id", "Values": [vpc_id]}]
+                )
+                for nat in nat_gws.get("NatGateways", []):
+                    if nat["State"] not in ["deleted", "deleting"]:
+                        ec2.delete_nat_gateway(NatGatewayId=nat["NatGatewayId"])
+                        deleted["nat_gateways"].append(nat["NatGatewayId"])
+                
+                # 3. Delete Internet Gateways
+                igws = ec2.describe_internet_gateways(
+                    Filters=[{"Name": "attachment.vpc-id", "Values": [vpc_id]}]
+                )
+                for igw in igws.get("InternetGateways", []):
+                    ec2.detach_internet_gateway(InternetGatewayId=igw["InternetGatewayId"], VpcId=vpc_id)
+                    ec2.delete_internet_gateway(InternetGatewayId=igw["InternetGatewayId"])
+                    deleted["internet_gateways"].append(igw["InternetGatewayId"])
+                
+                # 4. Delete Subnets
+                subnets = ec2.describe_subnets(
+                    Filters=[{"Name": "vpc-id", "Values": [vpc_id]}]
+                )
+                for subnet in subnets.get("Subnets", []):
+                    ec2.delete_subnet(SubnetId=subnet["SubnetId"])
+                    deleted["subnets"].append(subnet["SubnetId"])
+                
+                # 5. Delete Route Tables (skip main)
+                rts = ec2.describe_route_tables(
+                    Filters=[{"Name": "vpc-id", "Values": [vpc_id]}]
+                )
+                for rt in rts.get("RouteTables", []):
+                    is_main = any(assoc.get("Main", False) for assoc in rt.get("Associations", []))
+                    if not is_main:
+                        # Delete associations first
+                        for assoc in rt.get("Associations", []):
+                            if not assoc.get("Main", False):
+                                try:
+                                    ec2.disassociate_route_table(AssociationId=assoc["RouteTableAssociationId"])
+                                except Exception:
+                                    pass
+                        ec2.delete_route_table(RouteTableId=rt["RouteTableId"])
+                        deleted["route_tables"].append(rt["RouteTableId"])
+                
+                # 6. Delete Security Groups (skip default)
+                sgs = ec2.describe_security_groups(
+                    Filters=[{"Name": "vpc-id", "Values": [vpc_id]}]
+                )
+                for sg in sgs.get("SecurityGroups", []):
+                    if sg["GroupName"] != "default":
+                        ec2.delete_security_group(GroupId=sg["GroupId"])
+                        deleted["security_groups"].append(sg["GroupId"])
+                
+                # 7. Delete VPC
+                ec2.delete_vpc(VpcId=vpc_id)
+                deleted["vpcs"].append(f"{vpc_id} ({vpc_name})")
+                
+            except Exception as e:
+                errors.append(f"Error cleaning VPC {vpc_id}: {str(e)}")
+        
+        return CleanupResponse(
+            success=len(errors) == 0,
+            deleted=deleted,
+            errors=errors
+        )
+        
+    except Exception as e:
+        return CleanupResponse(
+            success=False,
+            deleted=deleted,
+            errors=[str(e)]
+        )

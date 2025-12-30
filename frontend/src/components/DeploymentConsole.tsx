@@ -1,49 +1,27 @@
-import { useState, useEffect, useRef } from 'react';
-import {
-    Terminal,
-    CheckCircle2,
-    Loader2,
-    Play,
-    Ban,
-    ShieldCheck,
-    Server,
-    LayoutDashboard,
-    Rocket,
-    X
-} from 'lucide-react';
-import { cn } from '../lib/utils';
+import { useState } from 'react';
 import type { TopologyGraph } from '../types/topology';
-import { AwsDashboard } from './AwsDashboard';
+import type { Stage, LogEntry, PlanSummary } from '../types/deployment';
+import { LogPanel } from './LogPanel';
+import { DeploymentControl } from './DeploymentControl';
+import { cn } from '../lib/utils';
 
 interface DeploymentConsoleProps {
     topology: TopologyGraph | null;
     isOpen: boolean;
     onClose: () => void;
+    viewMode?: 'overlay' | 'full';
 }
 
-type Stage = 'idle' | 'connect' | 'plan' | 'apply' | 'verify' | 'complete' | 'failed';
-type Tab = 'deploy' | 'dashboard';
 
-interface LogEntry {
-    id: string;
-    timestamp: string;
-    message: string;
-    type: 'info' | 'success' | 'warning' | 'error';
-}
+const API_BASE = 'http://localhost:3001';
 
-export function DeploymentConsole({ topology, isOpen, onClose }: DeploymentConsoleProps) {
-    const [isExpanded, setIsExpanded] = useState(true);
-    const [activeTab, setActiveTab] = useState<Tab>('deploy');
+export function DeploymentConsole({ topology, isOpen, onClose, viewMode = 'overlay' }: DeploymentConsoleProps) {
     const [stage, setStage] = useState<Stage>('idle');
     const [logs, setLogs] = useState<LogEntry[]>([]);
-    const logsEndRef = useRef<HTMLDivElement>(null);
-
-    // Auto-scroll logs
-    useEffect(() => {
-        if (logsEndRef.current) {
-            logsEndRef.current.scrollIntoView({ behavior: 'smooth' });
-        }
-    }, [logs]);
+    const [deploymentId, setDeploymentId] = useState<string | null>(null);
+    const [showDestroyConfirm, setShowDestroyConfirm] = useState(false);
+    const [planSummary, setPlanSummary] = useState<PlanSummary | null>(null);
+    const [isLogExpanded, setIsLogExpanded] = useState(true);
 
     const addLog = (message: string, type: LogEntry['type'] = 'info') => {
         setLogs(prev => [...prev, {
@@ -54,257 +32,269 @@ export function DeploymentConsole({ topology, isOpen, onClose }: DeploymentConso
         }]);
     };
 
-    const handleDeploy = async () => {
+    // Step 1: Plan only
+    const handlePlan = async () => {
+        if (!topology) {
+            addLog('No topology to deploy', 'error');
+            return;
+        }
+
         setStage('connect');
         setLogs([]);
+        setPlanSummary(null);
+        setIsLogExpanded(true);
         addLog('Initializing deployment sequence...', 'info');
 
-        // MOCK Deployment Process
-        setTimeout(() => {
+        try {
             setStage('plan');
-            addLog('Authenticating with AWS...', 'info');
-            addLog('Connected to account: 123456789012 (us-east-1)', 'success');
+            addLog('Generating Terraform plan...', 'info');
 
-            setTimeout(() => {
-                addLog('Generating Terraform plan...', 'info');
-                addLog('Plan: 5 to add, 0 to change, 0 to destroy.', 'info');
+            const planRes = await fetch(`${API_BASE}/api/deploy/plan`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ topology })
+            });
 
-                // Wait for user confirmation (simulated here for now)
-                setTimeout(() => {
-                    setStage('apply');
-                    addLog('Applying changes...', 'warning');
-                    addLog('Creating aws_vpc.main...', 'info');
-                    addLog('Creating aws_subnet.public_1...', 'info');
-                    addLog('Creating aws_subnet.private_1...', 'info');
-                    addLog('Creating aws_instance.web_server...', 'info');
+            if (!planRes.ok) {
+                const error = await planRes.json();
+                throw new Error(error.detail || 'Plan failed');
+            }
 
-                    setTimeout(() => {
-                        setStage('verify');
-                        addLog('Verifying resources...', 'info');
-                        addLog('Health check passed for web_server', 'success');
+            const planData = await planRes.json();
+            setDeploymentId(planData.deployment_id);
 
-                        setTimeout(() => {
-                            setStage('complete');
-                            addLog('Deployment completed successfully! 🚀', 'success');
-                        }, 1000);
-                    }, 2000);
-                }, 2000);
-            }, 1500);
-        }, 1000);
+            // Parse plan output to extract resource information
+            const planOutput = planData.plan_output || '';
+            const resourceMatches = planOutput.match(/# (aws_\w+\.\w+) will be created/g) || [];
+            const resourceList = resourceMatches.map((m: string) => m.replace('# ', '').replace(' will be created', ''));
+            const resourceCount = resourceList.length;
+
+            // Log the plan
+            addLog('─── Terraform Plan ───', 'info');
+            const lines = planOutput.split('\n');
+            lines.forEach((line: string) => {
+                if (line.trim()) {
+                    if (line.includes('will be created') || line.includes('+ create')) {
+                        addLog(line, 'success');
+                    } else if (line.includes('Error')) {
+                        addLog(line, 'error');
+                    } else {
+                        addLog(line, 'info');
+                    }
+                }
+            });
+
+            if (planData.status === 'failed') {
+                setStage('failed');
+                addLog('✗ Plan failed. Check logs above.', 'error');
+                return;
+            }
+
+            // Get cost estimate from topology
+            const estimatedCost = (topology as any).cost_estimate?.monthly_total ||
+                resourceCount * 7.5; // Rough estimate if no cost data
+
+            // Set plan summary for review
+            setPlanSummary({
+                resourceCount,
+                resourceList,
+                estimatedCost
+            });
+
+            // Move to review stage
+            setStage('review');
+            setIsLogExpanded(false); // Collapse logs for clearer review
+            addLog('✓ Plan complete!', 'success');
+            addLog(`📊 ${resourceCount} AWS resources will be created`, 'info');
+            addLog(`💰 Estimated cost: ~$${estimatedCost.toFixed(2)}/month`, 'warning');
+            addLog('─────────────────────────', 'info');
+            addLog('⚠️  Review the plan in the Deployment Pipeline, then click "Confirm & Deploy" to proceed.', 'warning');
+
+        } catch (err) {
+            setStage('failed');
+            addLog(`Error: ${err instanceof Error ? err.message : 'Unknown error'}`, 'error');
+        }
+    };
+
+    // Step 2: Apply (after user confirms)
+    const handleConfirmDeploy = async () => {
+        if (!deploymentId) {
+            addLog('No deployment to confirm', 'error');
+            return;
+        }
+
+        try {
+            setStage('apply');
+            setIsLogExpanded(true);
+            addLog('─────────────────────────', 'info');
+            addLog('🚀 User confirmed. Running terraform apply...', 'warning');
+            addLog('⚠️  Creating REAL AWS resources in your account...', 'warning');
+
+            const applyRes = await fetch(`${API_BASE}/api/deploy/apply/${deploymentId}`, {
+                method: 'POST'
+            });
+
+            if (!applyRes.ok) {
+                const error = await applyRes.json();
+                throw new Error(error.detail || 'Apply failed');
+            }
+
+            const applyData = await applyRes.json();
+
+            // Show apply output
+            if (applyData.apply_output) {
+                addLog('─── Terraform Apply ───', 'info');
+                const lines = applyData.apply_output.split('\n');
+                lines.forEach((line: string) => {
+                    if (line.trim()) {
+                        if (line.includes('Creating') || line.includes('created')) {
+                            addLog(line, 'success');
+                        } else if (line.includes('Error')) {
+                            addLog(line, 'error');
+                        } else {
+                            addLog(line, 'info');
+                        }
+                    }
+                });
+            }
+
+            if (applyData.status === 'completed') {
+                setStage('complete');
+                setIsLogExpanded(false);
+                addLog('─────────────────────────', 'info');
+                addLog('✓ ✓ Deployment completed successfully! 🚀', 'success');
+                addLog('✓ Resources are now live in your AWS account.', 'success');
+                addLog(`Deployment ID: ${deploymentId}`, 'info');
+            } else {
+                setStage('failed');
+                addLog('✗ Deployment failed.', 'error');
+                if (applyData.error) {
+                    addLog(`Error: ${applyData.error}`, 'error');
+                }
+            }
+
+        } catch (err) {
+            setStage('failed');
+            addLog(`Error: ${err instanceof Error ? err.message : 'Unknown error'}`, 'error');
+        }
+    };
+
+    const handleDestroy = async () => {
+        if (!deploymentId) {
+            addLog('No deployment to destroy', 'error');
+            return;
+        }
+
+        setShowDestroyConfirm(false);
+        setStage('destroying');
+        setIsLogExpanded(true);
+        addLog('Destroying infrastructure...', 'warning');
+
+        try {
+            const res = await fetch(`${API_BASE}/api/deploy/destroy`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ deployment_id: deploymentId })
+            });
+
+            if (!res.ok) {
+                const error = await res.json();
+                throw new Error(error.detail || 'Destroy failed');
+            }
+
+            const data = await res.json();
+
+            if (data.status === 'destroyed') {
+                setStage('idle');
+                addLog('✓ Infrastructure destroyed successfully', 'success');
+                addLog('All AWS resources have been removed.', 'info');
+                setDeploymentId(null);
+                setPlanSummary(null);
+            } else {
+                setStage('failed');
+                addLog('Failed to destroy infrastructure', 'error');
+            }
+
+        } catch (err) {
+            setStage('failed');
+            addLog(`Error: ${err instanceof Error ? err.message : 'Unknown error'}`, 'error');
+        }
     };
 
     if (!isOpen) return null;
 
     return (
-        <div className={cn(
-            "fixed bottom-0 left-0 right-0 z-50 bg-[#0c0c0e] border-t border-white/10 transition-all duration-300 shadow-2xl flex flex-col",
-            isExpanded ? "h-[500px]" : "h-12"
-        )}>
-            {/* Header Bar */}
-            <div
-                className="h-12 flex items-center justify-between px-4 bg-white/5 border-b border-white/5"
-            >
-                <div
-                    className="flex items-center gap-4 cursor-pointer"
-                    onClick={() => setIsExpanded(!isExpanded)}
-                >
-                    <div className="flex items-center gap-2">
-                        <Terminal className="w-4 h-4 text-indigo-400" />
-                        <span className="font-semibold text-sm">Deployment Console</span>
-                    </div>
+        <>
+            {/* Split Layout: Log Panel (Bottom) and Control Panel (Right) */}
 
-                    {/* Status Badge */}
-                    <div className={cn(
-                        "px-2 py-0.5 rounded text-xs font-mono border",
-                        stage === 'idle' && "bg-gray-800 text-gray-400 border-gray-700",
-                        stage === 'complete' && "bg-green-900/30 text-green-400 border-green-800",
-                        stage === 'failed' && "bg-red-900/30 text-red-400 border-red-800",
-                        (stage !== 'idle' && stage !== 'complete' && stage !== 'failed') && "bg-blue-900/30 text-blue-400 border-blue-800 animate-pulse"
-                    )}>
-                        {stage.toUpperCase()}
-                    </div>
-                </div>
+            {/* Bottom Log Panel */}
+            <LogPanel
+                logs={logs}
+                isOpen={true} // Always mounted if console is open
+                isExpanded={isLogExpanded}
+                onToggleExpand={() => setIsLogExpanded(!isLogExpanded)}
+                onClose={onClose}
+                style={{ right: viewMode === 'full' ? '0' : '400px' }}
+            />
 
-                <div className="flex items-center gap-4">
-                    {/* Tabs */}
-                    <div className="flex bg-black/50 p-1 rounded-lg border border-white/5">
-                        <button
-                            onClick={() => setActiveTab('deploy')}
-                            className={cn(
-                                "flex items-center gap-2 px-3 py-1 rounded-md text-xs font-medium transition-all",
-                                activeTab === 'deploy'
-                                    ? "bg-indigo-600 text-white shadow-lg"
-                                    : "text-gray-400 hover:text-white hover:bg-white/5"
-                            )}
-                        >
-                            <Rocket className="w-3 h-3" />
-                            Deploy
-                        </button>
-                        <button
-                            onClick={() => setActiveTab('dashboard')}
-                            className={cn(
-                                "flex items-center gap-2 px-3 py-1 rounded-md text-xs font-medium transition-all",
-                                activeTab === 'dashboard'
-                                    ? "bg-indigo-600 text-white shadow-lg"
-                                    : "text-gray-400 hover:text-white hover:bg-white/5"
-                            )}
-                        >
-                            <LayoutDashboard className="w-3 h-3" />
-                            AWS Status
-                        </button>
-                    </div>
-
-                    <div className="h-4 w-[1px] bg-white/10" />
-
-                    <button onClick={onClose} className="p-1 hover:bg-white/10 rounded transition-colors text-gray-400 hover:text-white">
-                        <X className="w-4 h-4" />
-                    </button>
-                </div>
-            </div>
-
-            {/* Main Content */}
-            <div className="flex-1 flex overflow-hidden">
-                {activeTab === 'dashboard' ? (
-                    <div className="w-full h-full bg-[#030304]">
-                        <AwsDashboard />
-                    </div>
-                ) : (
-                    <>
-                        {/* Left: Pipeline Visualizer */}
-                        <div className="w-64 border-r border-white/5 bg-[#09090b] p-6 flex flex-col gap-6">
-                            <Step
-                                title="Connect"
-                                status={getStepStatus('connect', stage)}
-                                icon={<Server className="w-4 h-4" />}
-                            />
-                            <div className="w-0.5 h-4 bg-white/5 ml-4 -my-2" />
-                            <Step
-                                title="Plan"
-                                status={getStepStatus('plan', stage)}
-                                icon={<ShieldCheck className="w-4 h-4" />}
-                            />
-                            <div className="w-0.5 h-4 bg-white/5 ml-4 -my-2" />
-                            <Step
-                                title="Apply"
-                                status={getStepStatus('apply', stage)}
-                                icon={<Play className="w-4 h-4" />}
-                            />
-                            <div className="w-0.5 h-4 bg-white/5 ml-4 -my-2" />
-                            <Step
-                                title="Verify"
-                                status={getStepStatus('verify', stage)}
-                                icon={<CheckCircle2 className="w-4 h-4" />}
-                            />
-                        </div>
-
-                        {/* Center: Logs */}
-                        <div className="flex-1 bg-black font-mono text-xs p-4 overflow-y-auto custom-scrollbar">
-                            {logs.length === 0 ? (
-                                <div className="h-full flex flex-col items-center justify-center text-gray-600 space-y-2 opacity-50">
-                                    <Terminal className="w-8 h-8" />
-                                    <p>Ready to deploy. Logs will appear here.</p>
-                                </div>
-                            ) : (
-                                <div className="space-y-1">
-                                    {logs.map((log) => (
-                                        <div key={log.id} className="flex gap-3 font-mono">
-                                            <span className="text-gray-500 w-16 shrink-0">{log.timestamp}</span>
-                                            <span className={cn(
-                                                "flex-1",
-                                                log.type === 'info' && "text-gray-300",
-                                                log.type === 'success' && "text-green-400",
-                                                log.type === 'warning' && "text-yellow-400",
-                                                log.type === 'error' && "text-red-400"
-                                            )}>
-                                                {log.type === 'success' && '✓ '}
-                                                {log.type === 'error' && '✗ '}
-                                                {log.message}
-                                            </span>
-                                        </div>
-                                    ))}
-                                    <div ref={logsEndRef} />
-                                </div>
-                            )}
-                        </div>
-
-                        {/* Right: Actions & Summary */}
-                        <div className="w-72 border-l border-white/5 bg-[#09090b] p-4 flex flex-col">
-                            <div className="mb-6">
-                                <h3 className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-3">Target</h3>
-                                <div className="p-3 rounded bg-white/5 border border-white/5 space-y-2">
-                                    <div className="flex justify-between text-sm">
-                                        <span className="text-gray-400">Region</span>
-                                        <span className="text-white font-mono">us-east-1</span>
-                                    </div>
-                                    <div className="flex justify-between text-sm">
-                                        <span className="text-gray-400">Resources</span>
-                                        <span className="text-white font-mono">{topology?.nodes.length || 0}</span>
-                                    </div>
-                                </div>
-                            </div>
-
-                            <div className="mt-auto space-y-2">
-                                {stage === 'idle' || stage === 'complete' || stage === 'failed' ? (
-                                    <button
-                                        onClick={handleDeploy}
-                                        className="w-full py-2 bg-indigo-600 hover:bg-indigo-500 text-white rounded font-medium text-sm flex items-center justify-center gap-2 transition-all shadow-lg shadow-indigo-500/20"
-                                    >
-                                        <Play className="w-4 h-4 fill-current" />
-                                        {stage === 'idle' ? 'Start Deployment' : 'Redeploy'}
-                                    </button>
-                                ) : (
-                                    <button
-                                        onClick={() => setStage('failed')} // Mock cancel
-                                        className="w-full py-2 bg-red-900/20 hover:bg-red-900/30 text-red-400 border border-red-900/50 rounded font-medium text-sm flex items-center justify-center gap-2 transition-all"
-                                    >
-                                        <Ban className="w-4 h-4" />
-                                        Cancel
-                                    </button>
-                                )}
-                            </div>
-                        </div>
-                    </>
-                )}
-            </div>
-        </div>
-    );
-}
-
-function Step({ title, status, icon }: { title: string, status: 'pending' | 'active' | 'completed' | 'failed', icon: React.ReactNode }) {
-    return (
-        <div className="flex items-center gap-3">
+            {/* Right Control Panel */}
             <div className={cn(
-                "w-8 h-8 rounded flex items-center justify-center transition-all",
-                status === 'pending' && "bg-white/5 text-gray-600",
-                status === 'active' && "bg-indigo-500 text-white shadow-[0_0_15px_rgba(99,102,241,0.5)]",
-                status === 'completed' && "bg-green-500/20 text-green-400 border border-green-500/30",
-                status === 'failed' && "bg-red-500/20 text-red-400 border border-red-500/30"
-            )}>
-                {status === 'active' ? <Loader2 className="w-4 h-4 animate-spin" /> : icon}
+                "h-full bg-[#0c0c0e]/95 backdrop-blur flex flex-col shadow-2xl transition-all duration-300",
+                viewMode === 'full' ? "w-full border-none" : "w-[400px] border-l border-white/10 absolute right-0 top-0 bottom-0 z-30"
+            )}
+                style={{
+                    paddingBottom: viewMode === 'full' ? (isLogExpanded ? '300px' : '40px') : '0'
+                }}>
+                <DeploymentControl
+                    stage={stage}
+                    deploymentId={deploymentId}
+                    planSummary={planSummary}
+                    topology={topology}
+                    isOpen={isOpen}
+                    onClose={onClose}
+                    onPlan={handlePlan}
+                    onConfirmDeploy={handleConfirmDeploy}
+                    onCancel={() => { setStage('idle'); setLogs([]); setPlanSummary(null); }}
+                    onShowDestroyConfirm={() => setShowDestroyConfirm(true)}
+                    viewMode={viewMode}
+                />
             </div>
-            <div className="flex flex-col">
-                <span className={cn(
-                    "text-sm font-medium transition-colors",
-                    status === 'pending' && "text-gray-500",
-                    status === 'active' && "text-white",
-                    status === 'completed' && "text-green-400",
-                    status === 'failed' && "text-red-400"
-                )}>{title}</span>
-            </div>
-        </div>
+            {/* Destroy Confirmation Modal handled internally by Control or separate? 
+                Actually DeploymentControl handles show logic, but modal should probably be global or inside Control.
+                Let's move modal inside DeploymentControl for cleaner DOM usage or keep it here if it needs to overlay everything.
+            */}
+            {showDestroyConfirm && (
+                <div className="fixed inset-0 bg-black/80 flex items-center justify-center z-[60]">
+                    <div className="bg-[#0c0c0e] border border-red-500/30 rounded-xl p-6 max-w-md mx-4 shadow-2xl">
+                        <div className="flex items-center gap-3 mb-4">
+                            <div className="p-2 rounded-full bg-red-900/20">
+                                <svg className="w-6 h-6 text-red-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+                                </svg>
+                            </div>
+                            <h3 className="text-lg font-bold text-white">Destroy Infrastructure?</h3>
+                        </div>
+                        <p className="text-gray-300 text-sm mb-6 leading-relaxed">
+                            This will permanently delete all AWS resources created by this deployment.<br />
+                            <span className="text-red-400 font-medium">This action cannot be undone.</span>
+                        </p>
+                        <div className="flex gap-3">
+                            <button
+                                onClick={() => setShowDestroyConfirm(false)}
+                                className="flex-1 py-2.5 bg-white/5 hover:bg-white/10 text-white rounded-lg font-medium text-sm transition-colors border border-white/5"
+                            >
+                                Cancel
+                            </button>
+                            <button
+                                onClick={handleDestroy}
+                                className="flex-1 py-2.5 bg-red-600 hover:bg-red-500 text-white rounded-lg font-medium text-sm transition-colors shadow-lg shadow-red-500/20"
+                            >
+                                Confirm Destroy
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
+        </>
     );
-}
-
-function getStepStatus(currentStep: Stage, pipelineStage: Stage): 'pending' | 'active' | 'completed' | 'failed' {
-    const order: Stage[] = ['connect', 'plan', 'apply', 'verify'];
-    const currentIndex = order.indexOf(currentStep);
-    const pipelineIndex = order.indexOf(pipelineStage);
-
-    if (pipelineStage === 'failed') return 'failed';
-    if (pipelineStage === 'complete') return 'completed';
-    if (pipelineStage === 'idle') return 'pending';
-
-    if (pipelineIndex > currentIndex) return 'completed';
-    if (pipelineIndex === currentIndex) return 'active';
-    return 'pending';
 }

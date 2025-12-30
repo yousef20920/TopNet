@@ -21,9 +21,25 @@ interface AWSAccountInfo {
     region: string;
 }
 
+interface EC2Instance {
+    id: string;
+    name: string;
+    type: string;
+    state: string;
+    az: string;
+}
+
+interface VPCInfo {
+    id: string;
+    name: string;
+    cidr: string;
+    is_default: boolean;
+    state: string;
+}
+
 interface AWSResourceSummary {
-    ec2: { total: number; running: number; stopped: number };
-    vpcs: { total: number };
+    ec2: { total: number; running: number; stopped: number; instances: EC2Instance[] };
+    vpcs: { total: number; vpcs: VPCInfo[] };
     security_groups: number;
     subnets: number;
     load_balancers: number;
@@ -40,7 +56,7 @@ interface AWSDashboardData {
 export function AwsDashboard() {
     const [data, setData] = useState<AWSDashboardData | null>(null);
     const [isLoading, setIsLoading] = useState(false);
-    const [region] = useState('us-east-1'); // Could be made selectable later
+    const [region] = useState('us-east-2'); // Ohio - matches deployment region
 
     const fetchData = async () => {
         setIsLoading(true);
@@ -53,8 +69,8 @@ export function AwsDashboard() {
                 connected: false,
                 account: null,
                 resources: {
-                    ec2: { total: 0, running: 0, stopped: 0 },
-                    vpcs: { total: 0 },
+                    ec2: { total: 0, running: 0, stopped: 0, instances: [] },
+                    vpcs: { total: 0, vpcs: [] },
                     security_groups: 0,
                     subnets: 0,
                     load_balancers: 0,
@@ -112,33 +128,40 @@ export function AwsDashboard() {
 
             {/* Account Info Card */}
             {data.account && (
-                <div className="mb-8 p-4 bg-gradient-to-br from-indigo-900/20 to-purple-900/20 border border-indigo-500/30 rounded-xl">
+                <div className="mb-8 p-6 bg-gradient-to-br from-indigo-900/40 to-purple-900/40 border border-indigo-500/30 rounded-2xl relative overflow-hidden group">
+                    <div className="absolute top-0 right-0 p-4 opacity-10 group-hover:opacity-20 transition-opacity">
+                        <User className="w-24 h-24 text-indigo-400" />
+                    </div>
+
                     <h3 className="text-sm font-semibold text-indigo-300 mb-4 flex items-center gap-2">
-                        <User className="w-4 h-4" /> Identity
+                        <div className="p-1 rounded bg-indigo-500/20">
+                            <User className="w-4 h-4" />
+                        </div>
+                        Identity
                     </h3>
-                    <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
+                    <div className="grid grid-cols-2 md:grid-cols-4 gap-6 text-sm relative z-10">
                         <div>
-                            <span className="block text-gray-500 text-xs uppercase tracking-wider mb-1">Account ID</span>
-                            <span className="font-mono text-white">{data.account.account_id}</span>
+                            <span className="block text-indigo-200/60 text-xs uppercase tracking-wider mb-1">Account ID</span>
+                            <span className="font-mono text-white text-lg font-medium">{data.account.account_id}</span>
                         </div>
                         <div>
-                            <span className="block text-gray-500 text-xs uppercase tracking-wider mb-1">User</span>
-                            <span className="text-white">{data.account.user_name}</span>
+                            <span className="block text-indigo-200/60 text-xs uppercase tracking-wider mb-1">User</span>
+                            <span className="text-white font-medium">{data.account.user_name}</span>
                         </div>
                         <div>
-                            <span className="block text-gray-500 text-xs uppercase tracking-wider mb-1">Region</span>
-                            <span className="text-white">{data.account.region}</span>
+                            <span className="block text-indigo-200/60 text-xs uppercase tracking-wider mb-1">Region</span>
+                            <span className="text-white font-mono bg-white/10 px-2 py-0.5 rounded text-xs">{data.account.region}</span>
                         </div>
                         <div>
-                            <span className="block text-gray-500 text-xs uppercase tracking-wider mb-1">Alias</span>
-                            <span className="text-white">{data.account.account_alias || '-'}</span>
+                            <span className="block text-indigo-200/60 text-xs uppercase tracking-wider mb-1">Alias</span>
+                            <span className="text-white font-medium">{data.account.account_alias || '-'}</span>
                         </div>
                     </div>
                 </div>
             )}
 
             {/* Resources Grid */}
-            <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
+            <div className="grid grid-cols-2 lg:grid-cols-3 gap-4">
                 <ResourceCard
                     icon={<Server className="w-5 h-5 text-orange-400" />}
                     label="EC2 Instances"
@@ -154,10 +177,10 @@ export function AwsDashboard() {
                     color="blue"
                 />
                 <ResourceCard
-                    icon={<Shield className="w-5 h-5 text-green-400" />}
+                    icon={<Shield className="w-5 h-5 text-emerald-400" />}
                     label="Security Groups"
                     count={data.resources.security_groups}
-                    color="green"
+                    color="emerald"
                 />
                 <ResourceCard
                     icon={<Network className="w-5 h-5 text-purple-400" />}
@@ -172,6 +195,103 @@ export function AwsDashboard() {
                     color="cyan"
                 />
             </div>
+
+            {/* ... Resource Details ... */}
+            {/* EC2 Instance Details */}
+            {data.resources.ec2.instances && data.resources.ec2.instances.length > 0 && (
+                <div className="mt-8">
+                    <h3 className="text-sm font-semibold text-gray-300 mb-4 flex items-center gap-2">
+                        EC2 Instances <span className="text-gray-500 font-normal text-xs px-2 py-0.5 bg-white/5 rounded-full">Active</span>
+                    </h3>
+                    <div className="space-y-3">
+                        {data.resources.ec2.instances.map((instance: any) => (
+                            <div
+                                key={instance.id}
+                                onClick={() => window.open(`https://${region}.console.aws.amazon.com/ec2/home?region=${region}#InstanceDetails:instanceId=${instance.id}`, '_blank')} className="group p-4 bg-white/5 border border-white/5 rounded-xl hover:bg-white/10 hover:border-white/10 transition-all cursor-pointer relative overflow-hidden"
+                            >
+                                <div className="absolute left-0 top-0 bottom-0 w-1 bg-gradient-to-b from-transparent via-indigo-500 to-transparent opacity-0 group-hover:opacity-100 transition-opacity" />
+                                <div className="flex items-center justify-between mb-2">
+                                    <div className="flex items-center gap-3">
+                                        <div className="p-2 bg-black/40 rounded-lg">
+                                            <Server className="w-4 h-4 text-gray-400 group-hover:text-white transition-colors" />
+                                        </div>
+                                        <div>
+                                            <span className="font-semibold text-white block">{instance.name || instance.id}</span>
+                                            <span className="text-[10px] text-gray-500 font-mono">{instance.id}</span>
+                                        </div>
+                                    </div>
+                                    <span className={cn(
+                                        "px-2.5 py-1 rounded-full text-xs font-medium flex items-center gap-1.5",
+                                        instance.state === 'running' && "bg-emerald-500/10 text-emerald-400 border border-emerald-500/20",
+                                        instance.state === 'stopped' && "bg-gray-700/50 text-gray-400 border border-gray-600/50",
+                                        instance.state === 'pending' && "bg-yellow-500/10 text-yellow-400 border border-yellow-500/20"
+                                    )}>
+                                        <span className={cn("w-1.5 h-1.5 rounded-full",
+                                            instance.state === 'running' ? "bg-emerald-400" :
+                                                instance.state === 'stopped' ? "bg-gray-400" : "bg-yellow-400"
+                                        )} />
+                                        {instance.state}
+                                    </span>
+                                </div>
+                                <div className="grid grid-cols-2 gap-4 mt-3 ml-[52px]">
+                                    <div>
+                                        <span className="text-gray-500 text-xs">Type</span>
+                                        <span className="ml-2 text-gray-300 font-mono text-xs group-hover:text-white transition-colors">{instance.type}</span>
+                                    </div>
+                                    <div>
+                                        <span className="text-gray-500 text-xs">Zone</span>
+                                        <span className="ml-2 text-gray-300 font-mono text-xs group-hover:text-white transition-colors">{instance.az}</span>
+                                    </div>
+                                </div>
+                            </div>
+                        ))}
+                    </div>
+                </div>
+            )}
+
+            {/* Keep VPC details similar or reuse same styling */}
+            {/* VPC Details */}
+            {data.resources.vpcs.vpcs && data.resources.vpcs.vpcs.length > 0 && (
+                <div className="mt-8">
+                    <h3 className="text-sm font-semibold text-gray-300 mb-4">VPCs</h3>
+                    <div className="space-y-3">
+                        {data.resources.vpcs.vpcs.map((vpc: any) => (
+                            <div
+                                key={vpc.id}
+                                onClick={() => window.open(`https://${region}.console.aws.amazon.com/vpc/home?region=${region}#VpcDetails:VpcId=${vpc.id}`, '_blank')} className="group p-4 bg-white/5 border border-white/5 rounded-xl hover:bg-white/10 hover:border-white/10 transition-all cursor-pointer relative overflow-hidden"
+                            >
+                                <div className="absolute left-0 top-0 bottom-0 w-1 bg-gradient-to-b from-transparent via-blue-500 to-transparent opacity-0 group-hover:opacity-100 transition-opacity" />
+                                <div className="flex items-center justify-between mb-2">
+                                    <div className="flex items-center gap-3">
+                                        <div className="p-2 bg-black/40 rounded-lg">
+                                            <Globe className="w-4 h-4 text-gray-400 group-hover:text-white transition-colors" />
+                                        </div>
+                                        <div>
+                                            <span className="font-semibold text-white block">{vpc.name || 'Unnamed VPC'}</span>
+                                            <span className="text-[10px] text-gray-500 font-mono">{vpc.id}</span>
+                                        </div>
+                                    </div>
+                                    {vpc.is_default && (
+                                        <span className="px-2 py-0.5 rounded text-[10px] font-medium bg-blue-500/10 text-blue-400 border border-blue-500/20">
+                                            Default
+                                        </span>
+                                    )}
+                                </div>
+                                <div className="grid grid-cols-2 gap-4 mt-3 ml-[52px]">
+                                    <div>
+                                        <span className="text-gray-500 text-xs">CIDR</span>
+                                        <span className="ml-2 text-gray-300 font-mono text-xs group-hover:text-white transition-colors">{vpc.cidr}</span>
+                                    </div>
+                                    <div>
+                                        <span className="text-gray-500 text-xs">State</span>
+                                        <span className="ml-2 text-gray-300 text-xs group-hover:text-white transition-colors">{vpc.state}</span>
+                                    </div>
+                                </div>
+                            </div>
+                        ))}
+                    </div>
+                </div>
+            )}
         </div>
     );
 }
@@ -179,17 +299,17 @@ export function AwsDashboard() {
 function ResourceCard({ icon, label, count, subtext, color }: { icon: React.ReactNode, label: string, count: number, subtext?: string, color: string }) {
     return (
         <div className={cn(
-            "p-4 rounded-xl border border-white/5 bg-white/5 hover:bg-white/10 transition-colors",
-            "hover:scale-[1.02] duration-200"
+            "p-5 rounded-2xl border border-white/5 bg-white/5 hover:bg-white/10 transition-all duration-300 group cursor-default",
+            "hover:translate-y-[-2px] hover:shadow-xl hover:shadow-black/20"
         )}>
-            <div className="flex items-start justify-between mb-2">
-                <div className={cn("p-2 rounded-lg bg-black/30", `text-${color}-400`)}>
+            <div className="flex items-start justify-between mb-3">
+                <div className={cn("p-2.5 rounded-xl bg-black/40 transition-colors group-hover:bg-black/60", `text-${color}-400`)}>
                     {icon}
                 </div>
-                <span className="text-2xl font-bold text-white">{count}</span>
+                <span className="text-3xl font-bold text-white tracking-tight">{count}</span>
             </div>
-            <div className="text-sm font-medium text-gray-300">{label}</div>
-            {subtext && <div className="text-xs text-gray-500 mt-1">{subtext}</div>}
+            <div className="text-sm font-medium text-gray-400 group-hover:text-gray-300 transition-colors">{label}</div>
+            {subtext && <div className="text-xs text-gray-600 mt-1 font-mono group-hover:text-gray-500">{subtext}</div>}
         </div>
     );
 }

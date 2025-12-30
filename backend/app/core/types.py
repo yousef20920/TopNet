@@ -30,6 +30,7 @@ class EdgeKind(str, Enum):
     ATTACHED_TO = "attached_to"  # subnet -> vpc
     ROUTES_TO = "routes_to"  # route_table -> gateway/subnet
     ALLOWED_TRAFFIC = "allowed_traffic"  # sg -> sg or sg -> subnet
+    PROTECTED_BY = "protected_by"  # instance -> security_group
     DEPENDS_ON = "depends_on"
     CONTAINS = "contains"
 

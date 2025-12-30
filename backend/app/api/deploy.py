@@ -164,15 +164,23 @@ async def plan_deployment(request: PlanRequest) -> PlanResponse:
     )
     deployments[deployment_id] = deployment
     
-    # Create temp directory and write Terraform files
-    workdir = tempfile.mkdtemp(prefix=f"topnet_{deployment_id}_")
-    deployment_workdirs[deployment_id] = workdir
+    # Use persistent workspace directory (not temp) to preserve Terraform state
+    # This allows Terraform to know what resources already exist
+    workspace_base = Path(__file__).parent.parent.parent / "terraform_workspaces"
+    workspace_base.mkdir(exist_ok=True)
     
-    tf_file = Path(workdir) / "main.tf.json"
+    # Use topology ID for consistent workspace (same topology = same workspace)
+    workspace_name = f"topnet_{request.topology.id or 'default'}"
+    workdir = workspace_base / workspace_name
+    workdir.mkdir(exist_ok=True)
+    
+    deployment_workdirs[deployment_id] = str(workdir)
+    
+    tf_file = workdir / "main.tf.json"
     tf_file.write_text(tf_json)
     
     # Run terraform init
-    returncode, stdout, stderr = await _run_terraform_command(workdir, ["init", "-no-color"])
+    returncode, stdout, stderr = await _run_terraform_command(str(workdir), ["init", "-no-color"])
     if returncode != 0:
         deployment.status = DeploymentStatus.FAILED
         deployment.error = stderr or stdout
@@ -185,7 +193,7 @@ async def plan_deployment(request: PlanRequest) -> PlanResponse:
         )
     
     # Run terraform plan
-    returncode, stdout, stderr = await _run_terraform_command(workdir, ["plan", "-no-color"])
+    returncode, stdout, stderr = await _run_terraform_command(str(workdir), ["plan", "-no-color"])
     
     plan_output = stdout if returncode == 0 else f"Plan failed:\n{stderr or stdout}"
     

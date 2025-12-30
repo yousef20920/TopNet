@@ -347,39 +347,40 @@ Features for MVP:
 
 ### Phase 1 – Skeleton & Types
 
-* [ ] Initialize Node + TS backend project
-* [ ] Add core types (`TopologyGraph`, nodes, edges)
-* [ ] Implement dummy endpoint `/api/topologies/generate` that returns a hardcoded graph
-* [ ] Implement basic React app with React Flow to display the graph
+* [x] Initialize Node + TS backend project
+* [x] Add core types (`TopologyGraph`, nodes, edges)
+* [x] Implement dummy endpoint `/api/topologies/generate` that returns a hardcoded graph
+* [x] Implement basic React app with React Flow to display the graph
 
 ### Phase 2 – Spec → Graph
 
-* [ ] Define `TopologySpec` and `ComponentSpec`
-* [ ] Implement `buildTopologyGraphFromSpec`
-* [ ] Replace hardcoded graph with spec-based builder
-* [ ] Add stubs for NL → `TopologySpec` (mocked function + TODO for actual LLM call)
+* [x] Define `TopologySpec` and `ComponentSpec`
+* [x] Implement `buildTopologyGraphFromSpec`
+* [x] Replace hardcoded graph with spec-based builder
+* [x] Add stubs for NL → `TopologySpec` (mocked function + TODO for actual LLM call)
 
 ### Phase 3 – Validation
 
-* [ ] Implement CIDR overlap validator
-* [ ] Implement orphaned node validator
-* [ ] Implement basic reachability checks (web → db only)
-* [ ] Wire validation results into `/api/topologies/generate`
-* [ ] Show validation results in frontend
+* [x] Implement CIDR overlap validator
+* [x] Implement orphaned node validator
+* [x] Implement basic reachability checks (web → db only)
+* [x] Implement HA/SPOF validator
+* [x] Wire validation results into `/api/topologies/generate`
+* [x] Show validation results in frontend
 
 ### Phase 4 – Terraform Output (AWS)
 
-* [ ] Implement mappings from graph node kinds → Terraform JSON
-* [ ] Generate `main.tf.json` from a `TopologyGraph`
-* [ ] Add `/api/topologies/terraform` endpoint
-* [ ] Frontend: code viewer + download button
+* [x] Implement mappings from graph node kinds → Terraform JSON
+* [x] Generate `main.tf.json` from a `TopologyGraph`
+* [x] Add `/api/topologies/terraform` endpoint
+* [x] Frontend: code viewer + download button
 
 ### Phase 5 – Polish & UX
 
-* [ ] Better auto-layout for graph
-* [ ] Node icons / colors by kind
-* [ ] Editable properties in UI
-* [ ] Simple versioning: save/load topologies
+* [x] Better auto-layout for graph
+* [x] Node icons / colors by kind
+* [x] Editable properties in UI
+* [x] Simple versioning: save/load topologies
 
 ---
 
