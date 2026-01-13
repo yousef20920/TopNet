@@ -29,9 +29,10 @@ const nodeTypes = {
 interface TopologyCanvasProps {
   topology: TopologyGraph | null;
   onNodeSelect: (node: BaseNode | null) => void;
+  highlightedNodes?: string[];
 }
 
-export function TopologyCanvas({ topology, onNodeSelect }: TopologyCanvasProps) {
+export function TopologyCanvas({ topology, onNodeSelect, highlightedNodes = [] }: TopologyCanvasProps) {
   const [nodes, setNodes, onNodesChange] = useNodesState<Node>([]);
   const [edges, setEdges, onEdgesChange] = useEdgesState<Edge>([]);
 
@@ -48,6 +49,31 @@ export function TopologyCanvas({ topology, onNodeSelect }: TopologyCanvasProps) 
       setEdges([]);
     }
   }, [topology, setNodes, setEdges]);
+
+  // Apply highlighting to nodes
+  useEffect(() => {
+    if (highlightedNodes.length > 0) {
+      setNodes((nds) =>
+        nds.map((node) => ({
+          ...node,
+          data: {
+            ...node.data,
+            highlighted: highlightedNodes.includes(node.id),
+          },
+        }))
+      );
+    } else {
+      setNodes((nds) =>
+        nds.map((node) => ({
+          ...node,
+          data: {
+            ...node.data,
+            highlighted: false,
+          },
+        }))
+      );
+    }
+  }, [highlightedNodes, setNodes]);
 
   const onNodeClick = useCallback((_event: React.MouseEvent, node: Node) => {
     const baseNode = node.data as unknown as BaseNode;
@@ -108,3 +134,4 @@ export function TopologyCanvas({ topology, onNodeSelect }: TopologyCanvasProps) 
     </div>
   );
 }
+

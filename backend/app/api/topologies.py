@@ -235,6 +235,16 @@ async def generate_topology(request: GenerateRequest) -> GenerateResponse:
         topology = build_topology_from_spec(spec)
         print(f"[topologies/generate] Built topology with {len(topology.nodes)} nodes, {len(topology.edges)} edges")
 
+        # Add cost estimate to topology metadata
+        from app.core.pricing import estimate_topology_cost
+        cost_estimate = estimate_topology_cost(topology)
+        
+        # Add cost to metadata
+        if topology.metadata is None:
+            topology.metadata = {}
+        topology.metadata["cost_estimate"] = cost_estimate
+        print(f"[topologies/generate] Estimated monthly cost: ${cost_estimate['monthly_total']}")
+
         # Start with info messages about what was generated
         validation = [
             ValidationResult(
@@ -318,6 +328,16 @@ async def generate_from_spec(request: GenerateFromSpecRequest) -> GenerateRespon
         # Build topology from spec
         topology = build_topology_from_spec(spec)
         print(f"[topologies/generate-from-spec] Built topology with {len(topology.nodes)} nodes, {len(topology.edges)} edges")
+
+        # Add cost estimate to topology metadata
+        from app.core.pricing import estimate_topology_cost
+        cost_estimate = estimate_topology_cost(topology)
+        
+        # Add cost to metadata
+        if topology.metadata is None:
+            topology.metadata = {}
+        topology.metadata["cost_estimate"] = cost_estimate
+        print(f"[topologies/generate-from-spec] Estimated monthly cost: ${cost_estimate['monthly_total']}")
 
         validation = [
             ValidationResult(

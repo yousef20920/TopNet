@@ -43,16 +43,7 @@ async def start_chat() -> StartResponse:
     """Start a new chat session."""
     conversation = get_or_create_conversation()
     
-    greeting = """Hi! I'm TopNet, your cloud infrastructure assistant. 👋
-
-I'll help you design and deploy AWS infrastructure. Just tell me what you want to build!
-
-**Examples:**
-- "I need a web app with 2 servers and a PostgreSQL database"
-- "High availability setup with MySQL"
-- "Simple EC2 instance for testing"
-
-What would you like to create?"""
+    greeting = "Hi! I'm your infrastructure assistant. Tell me what you'd like to build and I'll help you design it."
     
     return StartResponse(
         session_id=conversation.id,

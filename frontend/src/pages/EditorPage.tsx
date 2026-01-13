@@ -1,4 +1,5 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
+import { useLocation } from 'react-router-dom';
 import { motion } from 'framer-motion';
 import { PanelLeft, Zap, Box, Play, LayoutDashboard, Share2 } from 'lucide-react';
 import { ReactFlowProvider } from '@xyflow/react';
@@ -6,23 +7,49 @@ import { TopologyCanvas } from '../components/TopologyCanvas';
 import { ChatPanel } from '../components/ChatPanel';
 import { DeploymentConsole } from '../components/DeploymentConsole';
 import { AwsDashboard } from '../components/AwsDashboard';
+import { ValidationPanel } from '../components/ValidationPanel';
+import { NodeInspector } from '../components/NodeInspector';
 import { cn } from '../lib/utils';
-import type { TopologyGraph } from '../types/topology';
+import type { TopologyGraph, ValidationResult, BaseNode } from '../types/topology';
 import { generateTopologyFromSpec } from '../api/topologyApi';
 
 type ViewMode = 'design' | 'deploy' | 'monitor';
 
+interface LocationState {
+    topology?: TopologyGraph;
+    validation?: ValidationResult[];
+    initialPrompt?: string;
+    sessionId?: string;
+    assistantMessage?: string;
+    chatHistory?: { role: 'user' | 'assistant'; content: string }[];
+}
+
 export function EditorPage() {
+    const location = useLocation();
+    const locationState = location.state as LocationState | null;
+
     const [viewMode, setViewMode] = useState<ViewMode>('design');
-    const [topology, setTopology] = useState<TopologyGraph | null>(null);
+    const [topology, setTopology] = useState<TopologyGraph | null>(locationState?.topology ?? null);
+    const [validationResults, setValidationResults] = useState<ValidationResult[]>(locationState?.validation ?? []);
     const [isSidebarOpen, setIsSidebarOpen] = useState(true);
     const [isLoading, setIsLoading] = useState(false);
+    const [highlightedNodes, setHighlightedNodes] = useState<string[]>([]);
+    const [selectedNode, setSelectedNode] = useState<BaseNode | null>(null);
+
+    // Clear location state after reading (so refresh doesn't re-apply)
+    useEffect(() => {
+        if (locationState?.topology) {
+            window.history.replaceState({}, document.title);
+        }
+    }, [locationState]);
 
     const handleGenerateFromSpec = async (spec: Record<string, unknown>) => {
         setIsLoading(true);
+        setValidationResults([]);
         try {
             const result = await generateTopologyFromSpec(spec);
             setTopology(result.topology);
+            setValidationResults(result.validation);
             // Optionally switch to design view if not already
             if (viewMode !== 'design') setViewMode('design');
         } catch (err) {
@@ -30,6 +57,12 @@ export function EditorPage() {
         } finally {
             setIsLoading(false);
         }
+    };
+
+    const handleValidationItemClick = (nodeIds: string[]) => {
+        setHighlightedNodes(nodeIds);
+        // Clear highlight after 3 seconds
+        setTimeout(() => setHighlightedNodes([]), 3000);
     };
 
     return (
@@ -109,6 +142,8 @@ export function EditorPage() {
                         <ChatPanel
                             onGenerateTopology={handleGenerateFromSpec}
                             isGenerating={isLoading}
+                            initialMessages={locationState?.chatHistory}
+                            initialSessionId={locationState?.sessionId}
                         />
                     </div>
                 </motion.div>
@@ -117,14 +152,53 @@ export function EditorPage() {
                 <div className="flex-1 relative bg-[url('/grid.svg')] bg-repeat opacity-[0.98] overflow-hidden">
 
                     {/* Design View */}
-                    <div className={cn("absolute inset-0 transition-opacity duration-300 flex flex-col", viewMode === 'design' ? "opacity-100 z-10 pointer-events-auto" : "opacity-0 z-0 pointer-events-none")}>
+                    <div className={cn("absolute inset-0 transition-opacity duration-300 flex", viewMode === 'design' ? "opacity-100 z-10 pointer-events-auto" : "opacity-0 z-0 pointer-events-none")}>
                         <ReactFlowProvider>
-                            <div className="flex-1 h-full w-full">
+                            {/* Canvas Area */}
+                            <div className="flex-1 h-full w-full relative">
                                 <TopologyCanvas
                                     topology={topology}
-                                    onNodeSelect={() => { }}
+                                    onNodeSelect={setSelectedNode}
+                                    highlightedNodes={highlightedNodes}
                                 />
+
+                                {/* Validation Panel - Floating in bottom right (only when no node selected) */}
+                                {(topology || isLoading) && !selectedNode && (
+                                    <div className="absolute bottom-4 right-4 w-80 z-20">
+                                        <ValidationPanel
+                                            validationResults={validationResults}
+                                            isValidating={isLoading}
+                                            onItemClick={handleValidationItemClick}
+                                        />
+                                    </div>
+                                )}
                             </div>
+
+                            {/* Node Inspector Sidebar - Right side */}
+                            {selectedNode && (
+                                <motion.div
+                                    initial={{ width: 0, opacity: 0 }}
+                                    animate={{ width: 384, opacity: 1 }}
+                                    exit={{ width: 0, opacity: 0 }}
+                                    transition={{ duration: 0.3 }}
+                                    className="h-full border-l border-white/10 bg-[#0a0a0f] overflow-hidden flex-shrink-0"
+                                >
+                                    <div className="w-96 h-full overflow-y-auto custom-scrollbar">
+                                        <NodeInspector
+                                            node={selectedNode}
+                                            onUpdate={(updated) => {
+                                                // Update node in topology
+                                                if (topology) {
+                                                    const newNodes: BaseNode[] = topology.nodes.map((n: BaseNode): BaseNode =>
+                                                        (n.id === updated.id ? updated : n) as BaseNode
+                                                    );
+                                                    setTopology({ ...topology, nodes: newNodes });
+                                                }
+                                            }}
+                                        />
+                                    </div>
+                                </motion.div>
+                            )}
                         </ReactFlowProvider>
 
                         {/* Empty State Overlay */}

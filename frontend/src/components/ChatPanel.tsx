@@ -12,19 +12,22 @@ interface Message {
 interface ChatPanelProps {
     onGenerateTopology: (spec: Record<string, unknown>) => void;
     isGenerating: boolean;
+    initialMessages?: Message[];
+    initialSessionId?: string | null;
 }
 
 const API_BASE = 'http://localhost:3001';
 
-export function ChatPanel({ onGenerateTopology, isGenerating }: ChatPanelProps) {
-    const [messages, setMessages] = useState<Message[]>([]);
+export function ChatPanel({ onGenerateTopology, isGenerating, initialMessages, initialSessionId }: ChatPanelProps) {
+    const [messages, setMessages] = useState<Message[]>(initialMessages ?? []);
     const [input, setInput] = useState('');
     const [isLoading, setIsLoading] = useState(false);
-    const [sessionId, setSessionId] = useState<string | null>(null);
+    const [sessionId, setSessionId] = useState<string | null>(initialSessionId ?? null);
     const [isReady, setIsReady] = useState(false);
     const [extractedSpec, setExtractedSpec] = useState<Record<string, unknown> | null>(null);
     const messagesEndRef = useRef<HTMLDivElement>(null);
     const inputRef = useRef<HTMLTextAreaElement>(null);
+    const [hasInitialized, setHasInitialized] = useState(false);
 
     const scrollToBottom = () => {
         messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -52,9 +55,15 @@ export function ChatPanel({ onGenerateTopology, isGenerating }: ChatPanelProps) 
         }
     };
 
+    // Only start new session if we don't have initial data
     useEffect(() => {
-        startNewSession();
-    }, []);
+        if (!hasInitialized) {
+            setHasInitialized(true);
+            if (!initialSessionId && (!initialMessages || initialMessages.length === 0)) {
+                startNewSession();
+            }
+        }
+    }, [hasInitialized, initialSessionId, initialMessages]);
 
     const sendMessage = async () => {
         if (!input.trim() || !sessionId || isLoading) return;

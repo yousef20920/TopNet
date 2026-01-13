@@ -90,8 +90,9 @@ export function DeploymentConsole({ topology, isOpen, onClose, viewMode = 'overl
                 return;
             }
 
-            // Get cost estimate from topology
-            const estimatedCost = (topology as any).cost_estimate?.monthly_total ||
+            // Get cost estimate from topology metadata
+            const estimatedCost = (topology as any).metadata?.cost_estimate?.monthly_total ||
+                (topology as any).cost_estimate?.monthly_total ||
                 resourceCount * 7.5; // Rough estimate if no cost data
 
             // Set plan summary for review

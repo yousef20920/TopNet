@@ -115,10 +115,10 @@ TopNet/
 ## Roadmap
 
 - [x] **Phase 1** - Skeleton & types, hardcoded topology, graph visualization
-- [ ] **Phase 2** - Spec → Graph builder, NL parsing stubs
-- [ ] **Phase 3** - Validation passes (CIDR overlap, orphaned nodes, reachability)
-- [ ] **Phase 4** - Terraform generation for AWS
-- [ ] **Phase 5** - Polish, better layout, editable properties
+- [x] **Phase 2** - Spec → Graph builder, NL parsing stubs
+- [x] **Phase 3** - Validation passes (CIDR overlap, orphaned nodes, reachability)
+- [x] **Phase 4** - Terraform generation for AWS
+- [x] **Phase 5** - Polish, better layout, editable properties
 
 ## License
 

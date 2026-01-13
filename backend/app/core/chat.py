@@ -39,10 +39,13 @@ SYSTEM_PROMPT = """You are TopNet, an AI assistant that helps users design cloud
 IMPORTANT RULES:
 1. Ask clarifying questions to understand the user's needs
 2. Be concise and friendly
-3. When you have enough information, include a JSON spec block in your response
-4. Only include the JSON when you're confident you understand what the user wants
-5. NEVER put comments in the JSON - it must be valid JSON
-6. Use "web_tier" role for EC2 instances (web servers, app servers, test instances)
+3. **EXPLAIN INFRASTRUCTURE**: When a user asks for "a server", explain that AWS requires basic networking:
+   - Simple setup (1 server, no DB): "I'll create a minimal setup: VPC (network), subnet, security group (firewall), and your EC2 instance - about 6 resources total. This is the minimum AWS needs for a server."
+   - Production setup: Mention VPC, subnets, load balancer, etc.
+4. When you have enough information, include a JSON spec block in your response
+5. Only include the JSON when you're confident you understand what the user wants
+6. NEVER put comments in the JSON - it must be valid JSON
+7. Use "web_tier" role for EC2 instances (web servers, app servers, test instances, API servers)
 
 Questions to consider asking:
 - What type of application? (web app, API, data processing, etc.)
@@ -283,13 +286,24 @@ Just describe what you need, and I'll help you configure it!"""
         # Build response
         response_parts = ["Great! Based on what you've told me, here's what I'll create:\n"]
         
-        if has_web:
-            response_parts.append(f"- **{quantity} EC2 instance(s)** ({instance_type}) for your web/app tier")
-        if has_db:
-            response_parts.append(f"- **RDS {db_engine.upper()}** database")
+        if has_web and not has_db and quantity == 1:
+            # Simple mode - explain the minimal infrastructure
+            response_parts.append(f"**Simple Setup** (minimal AWS infrastructure):")
+            response_parts.append(f"- 1 EC2 instance ({instance_type}) for your server")
+            response_parts.append(f"- VPC (virtual network)")
+            response_parts.append(f"- Subnet (network segment)")
+            response_parts.append(f"- Security group (firewall rules)")
+            response_parts.append(f"- Internet gateway + route table")
+            response_parts.append(f"\n_Total: ~6 resources. This is the minimum AWS needs to run a server._")
+        else:
+            # Production mode - list main components
+            if has_web:
+                response_parts.append(f"- **{quantity} EC2 instance(s)** ({instance_type}) for your web/app tier")
+            if has_db:
+                response_parts.append(f"- **RDS {db_engine.upper()}** database")
+            response_parts.append(f"- **Networking**: VPC, subnets across 2 AZs, load balancer, NAT gateway, security groups, route tables")
         
-        response_parts.append(f"- **Region:** {region}")
-        response_parts.append(f"- Plus: VPC, subnets, security groups, load balancer, route tables")
+        response_parts.append(f"\n**Region:** {region}")
         response_parts.append("\nDoes this look good? If yes, click **Generate Topology** below!")
         response_parts.append(f"\n```json\n{spec_json}\n```")
         
