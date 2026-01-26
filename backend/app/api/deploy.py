@@ -61,6 +61,8 @@ class DeployResponse(BaseModel):
     deployment_id: str
     status: DeploymentStatus
     message: str
+    error: str | None = None
+    apply_output: str | None = None
 
 
 class PlanRequest(BaseModel):
@@ -254,14 +256,19 @@ async def apply_deployment(deployment_id: str) -> DeployResponse:
         deployment.status = DeploymentStatus.FAILED
         deployment.error = stderr or stdout
         deployment.apply_output = stderr or stdout
-        deployment.message = "Deployment failed"
+        # Extract first error line for message
+        error_text = stderr or stdout
+        first_error_line = error_text.split('\n')[0] if error_text else "Unknown error"
+        deployment.message = f"Deployment failed: {first_error_line}"
     
     deployment.updated_at = datetime.now(timezone.utc).isoformat()
-    
+
     return DeployResponse(
         deployment_id=deployment_id,
         status=deployment.status,
-        message=deployment.message or ""
+        message=deployment.message or "",
+        error=deployment.error,
+        apply_output=deployment.apply_output
     )
 
 

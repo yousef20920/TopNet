@@ -5,6 +5,7 @@ import json
 from typing import Any
 
 from app.core import TopologyGraph, BaseNode, NodeKind
+from app.core.user_data_generator import generate_user_data_script, encode_user_data
 
 
 class TerraformGenerator:
@@ -333,20 +334,20 @@ class TerraformGenerator:
         """Add aws_instance resource."""
         if "aws_instance" not in self.resources:
             self.resources["aws_instance"] = {}
-        
+
         name = _sanitize_name(node.id)
-        
+
         # Get subnet reference
         subnet_id = node.props.get("subnet_id", "subnet-private-1")
         subnet_ref = f"${{aws_subnet.{_sanitize_name(subnet_id)}.id}}"
-        
+
         # Get security group references
         sg_ids = node.props.get("security_groups", [])
         sg_refs = [f"${{aws_security_group.{_sanitize_name(s)}.id}}" for s in sg_ids]
-        
+
         # Use Amazon Linux 2023 AMI
         instance_type = node.props.get("instance_type", "t3.micro")
-        
+
         # Region-specific AMIs for Amazon Linux 2023
         region = node.region or "us-east-2"
         ami_map = {
@@ -359,35 +360,98 @@ class TerraformGenerator:
             "eu-central-1": "ami-0faab6bdbac9486fb",
         }
         ami = ami_map.get(region, ami_map["us-east-2"])  # Default to Ohio
-        
-        self.resources["aws_instance"][name] = {
+
+        instance_config: dict[str, Any] = {
             "ami": ami,
             "instance_type": instance_type,
             "subnet_id": subnet_ref,
             "vpc_security_group_ids": sg_refs,
             "tags": node.tags or {"Name": node.name or node.id}
         }
+
+        # Check for application configuration and generate user_data
+        app_config = node.props.get("application")
+        if app_config and app_config.get("source", {}).get("repoUrl"):
+            user_data_script = generate_user_data_script(app_config, self.graph.nodes)
+            if user_data_script:
+                # Use base64encode for Terraform
+                instance_config["user_data_base64"] = encode_user_data(user_data_script)
+                # Add metadata for app deployment tracking
+                instance_config["tags"]["TopNet:AppDeployed"] = "true"
+                instance_config["tags"]["TopNet:AppRepo"] = app_config["source"]["repoUrl"]
+
+        self.resources["aws_instance"][name] = instance_config
     
     def _add_rds(self, node: BaseNode) -> None:
         """Add aws_db_subnet_group and aws_db_instance resources."""
+        from app.core import BaseNode as BNode, NodeKind as NK, Provider
+
         if "aws_db_subnet_group" not in self.resources:
             self.resources["aws_db_subnet_group"] = {}
         if "aws_db_instance" not in self.resources:
             self.resources["aws_db_instance"] = {}
-        
+
         name = _sanitize_name(node.id)
         
         # Find all database subnets for the subnet group
-        db_subnets = [n for n in self.graph.nodes if n.kind == NodeKind.SUBNET and "db" in n.id.lower()]
+        db_subnets = [n for n in self.graph.nodes if n.kind == NK.SUBNET and "db" in n.id.lower()]
         if not db_subnets:
             # Fall back to private subnets
-            db_subnets = [n for n in self.graph.nodes if n.kind == NodeKind.SUBNET and "private" in n.id.lower()]
-        
-        subnet_refs = [f"${{aws_subnet.{_sanitize_name(s.id)}.id}}" for s in db_subnets[:2]]
-        
-        # Need at least 2 subnets for RDS
-        if len(subnet_refs) < 2:
-            subnet_refs = subnet_refs * 2  # Duplicate if only one
+            db_subnets = [n for n in self.graph.nodes if n.kind == NK.SUBNET and "private" in n.id.lower()]
+        if not db_subnets:
+            # Fall back to ANY subnet (for TIER 1 which only has public subnets)
+            db_subnets = [n for n in self.graph.nodes if n.kind == NK.SUBNET]
+
+        # Use subnet IDs from node props if available (TIER 1)
+        subnet_ids_from_props = node.props.get("subnet_ids", [])
+        if subnet_ids_from_props:
+            # Filter to actual subnet nodes
+            db_subnets = [n for n in self.graph.nodes if n.kind == NK.SUBNET and n.id in subnet_ids_from_props]
+
+        subnet_refs = [f"${{aws_subnet.{_sanitize_name(s.id)}.id}}" for s in db_subnets]
+
+        # RDS requires at least 2 subnets in different AZs
+        # For TIER 1 with only 1 subnet, we need to create a second subnet
+        if len(subnet_refs) < 2 and len(db_subnets) == 1:
+            # Create a second subnet in a different AZ for RDS
+            original_subnet = db_subnets[0]
+            second_subnet_id = f"{original_subnet.id}-az2"
+            second_az = f"{original_subnet.region}b" if original_subnet.az and original_subnet.az.endswith('a') else f"{original_subnet.region or 'us-east-1'}b"
+
+            # Add second subnet node to graph (for RDS requirement)
+            second_subnet = BNode(
+                id=second_subnet_id,
+                kind=NK.SUBNET,
+                name=f"{original_subnet.name}-az2" if original_subnet.name else "subnet-public-2",
+                provider=Provider.AWS,
+                region=original_subnet.region,
+                az=second_az,
+                props={
+                    "cidr_block": "10.0.2.0/24",  # Different CIDR
+                    "is_public": original_subnet.props.get("is_public", True),
+                    "map_public_ip_on_launch": original_subnet.props.get("map_public_ip_on_launch", False),
+                },
+                tags={"Name": f"topnet-public-2", "ManagedBy": "TopNet", "CreatedFor": "RDS"},
+            )
+            self.graph.nodes.append(second_subnet)
+
+            # Add subnet resource to Terraform
+            if "aws_subnet" not in self.resources:
+                self.resources["aws_subnet"] = {}
+
+            subnet_tf_name = _sanitize_name(second_subnet_id)
+            self.resources["aws_subnet"][subnet_tf_name] = {
+                "vpc_id": self._vpc_ref(),
+                "cidr_block": "10.0.2.0/24",
+                "availability_zone": second_az,
+                "map_public_ip_on_launch": original_subnet.props.get("map_public_ip_on_launch", False),
+                "tags": second_subnet.tags or {"Name": "topnet-public-2"},
+            }
+
+            subnet_refs.append(f"${{aws_subnet.{subnet_tf_name}.id}}")
+        elif len(subnet_refs) < 2:
+            # If we somehow have no subnets at all, this is an error
+            print(f"WARNING: RDS requires at least 2 subnets, but only found {len(subnet_refs)}")
         
         sg_name = f"{name}_subnet_group"
         self.resources["aws_db_subnet_group"][sg_name] = {

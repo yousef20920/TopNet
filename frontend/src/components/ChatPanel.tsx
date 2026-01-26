@@ -33,8 +33,11 @@ export function ChatPanel({ onGenerateTopology, isGenerating, initialMessages, i
         messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
     };
 
+    // Only auto-scroll when assistant sends a message (not on user messages)
     useEffect(() => {
-        scrollToBottom();
+        if (messages.length > 0 && messages[messages.length - 1].role === 'assistant') {
+            scrollToBottom();
+        }
     }, [messages]);
 
     const startNewSession = async () => {

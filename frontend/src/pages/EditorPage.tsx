@@ -192,13 +192,19 @@ export function EditorPage() {
                                     <div className="w-96 h-full overflow-y-auto custom-scrollbar">
                                         <NodeInspector
                                             node={selectedNode}
-                                            onUpdate={(updated) => {
-                                                // Update node in topology
+                                            allNodes={topology?.nodes || []}
+                                            onUpdate={(nodeId, newProps) => {
+                                                // Update node props in topology
                                                 if (topology) {
                                                     const newNodes: BaseNode[] = topology.nodes.map((n: BaseNode): BaseNode =>
-                                                        (n.id === updated.id ? updated : n) as BaseNode
+                                                        n.id === nodeId ? { ...n, props: newProps } : n
                                                     );
                                                     setTopology({ ...topology, nodes: newNodes });
+                                                    // Also update selectedNode to reflect changes
+                                                    const updatedNode = newNodes.find(n => n.id === nodeId);
+                                                    if (updatedNode) {
+                                                        setSelectedNode(updatedNode);
+                                                    }
                                                 }
                                             }}
                                         />

@@ -32,74 +32,145 @@ class TopologyBuilder:
         self.web_sg_id: str | None = None
         self.db_sg_id: str | None = None
         self.alb_sg_id: str | None = None
-        
-        # Detect if this is a simple setup
-        self.is_simple = self._detect_simple_mode()
 
-    def _detect_simple_mode(self) -> bool:
-        """Detect if user wants a simple/minimal setup."""
-        # Simple mode: single web instance, no database, no HA keywords
-        web_comps = [c for c in self.spec.components if c.role == ComponentRole.WEB_TIER]
-        db_comps = [c for c in self.spec.components if c.role == ComponentRole.DB_TIER]
-        
-        # Check for keywords indicating simplicity
-        simple_keywords = ["simple", "test", "basic", "minimal", "single", "just one"]
-        is_simple_description = any(
-            any(kw in (c.description or "").lower() for kw in simple_keywords)
+        # Detect complexity tier
+        self.tier = self._detect_complexity_tier()
+
+    def _detect_complexity_tier(self) -> int:
+        """
+        Detect complexity tier based on user intent.
+
+        TIER 1 (Hobby/MVP/Student - ~$5-30/mo):
+          - Triggers: "simple", "cheap", "small", "test", "mvp", "hobby", "learning", "student"
+          - OR: No explicit HA/production requirements
+          - Architecture: 1 AZ, Public Subnets, IGW only, NO NAT, NO ALB
+
+        TIER 2 (Production - ~$70+/mo):
+          - Triggers: "production", "high availability", "ha", "multi-az", "secure", "enterprise"
+          - Architecture: 2 AZs, Private Subnets for DB, NAT Gateway, ALB
+
+        DEFAULT: TIER 1 (assume hobby/learning unless explicitly stated otherwise)
+        """
+        # Gather all descriptions for analysis
+        all_text = " ".join([
+            (c.description or "").lower()
             for c in self.spec.components
-        )
-        
-        # Simple if: only 1 web instance, no DB, or has simple keywords
-        if not web_comps:
-            return False
-        
-        total_web = sum(c.quantity or 1 for c in web_comps)
-        has_db = len(db_comps) > 0
-        
-        return (total_web == 1 and not has_db) or is_simple_description
+        ]).lower()
+
+        # TIER 2 triggers (production/HA keywords)
+        tier2_keywords = [
+            "production", "prod", "high availability", "highly available",
+            "ha", "multi-az", "multi az", "fault tolerant", "redundant",
+            "enterprise", "mission critical", "99.9", "uptime",
+            "load balancer", "load balanced", "alb", "scaling"
+        ]
+
+        # TIER 1 triggers (explicit simplicity)
+        tier1_keywords = [
+            "simple", "cheap", "budget", "small", "test", "testing",
+            "mvp", "prototype", "hobby", "learning", "student", "practice",
+            "minimal", "basic", "single", "one instance", "just one"
+        ]
+
+        # Check for explicit TIER 2 requests
+        if any(kw in all_text for kw in tier2_keywords):
+            return 2
+
+        # Check for explicit TIER 1 requests
+        if any(kw in all_text for kw in tier1_keywords):
+            return 1
+
+        # Check quantity - if user explicitly requests 2+ instances, assume TIER 2
+        web_comps = [c for c in self.spec.components if c.role == ComponentRole.WEB_TIER]
+        if web_comps:
+            for comp in web_comps:
+                if comp.quantity and comp.quantity >= 2:
+                    return 2
+
+        # DEFAULT TO TIER 1 (hobby/learning)
+        # This is the critical change - we assume users want cheap unless they say otherwise
+        return 1
 
     def build(self) -> TopologyGraph:
         """Build the complete topology graph from spec."""
-        # Use simple mode for minimal setups
-        if self.is_simple:
-            return self._build_simple()
-        
-        return self._build_full()
+        # Use tier-based architecture
+        if self.tier == 1:
+            return self._build_tier1()  # Hobby/MVP - cheap architecture
+        else:
+            return self._build_tier2()  # Production - HA architecture
     
-    def _build_simple(self) -> TopologyGraph:
-        """Build a simple/minimal topology - just VPC, subnet, SG, and EC2."""
+    def _build_tier1(self) -> TopologyGraph:
+        """
+        Build TIER 1 (Hobby/MVP) topology.
+
+        Architecture:
+        - 1 Availability Zone
+        - Public Subnets ONLY (EC2 gets public IP automatically)
+        - Internet Gateway (IGW) for outbound internet
+        - NO NAT Gateway (saves $32/mo)
+        - NO Load Balancer (saves $16/mo)
+        - Database in Public Subnet (acceptable for hobby projects)
+
+        Cost: ~$5-30/mo depending on instance sizes
+        """
         # Create minimal VPC
         self._create_vpc()
         self._create_internet_gateway()
-        
+
         # Single public subnet
         self._create_single_public_subnet()
-        
+
         # Simple route table
         self._create_simple_route_table()
-        
-        # Basic security group (simple version, no ALB dependency)
-        self._create_simple_security_group()
-        
-        # Create EC2 instance(s)
-        web_quantity = self._get_quantity(ComponentRole.WEB_TIER)
-        self._create_simple_ec2_instances(web_quantity)
-        
+
+        # Check what components we need
+        has_web_tier = any(c.role == ComponentRole.WEB_TIER for c in self.spec.components)
+        has_db_tier = any(c.role == ComponentRole.DB_TIER for c in self.spec.components)
+
+        # Create security groups
+        if has_web_tier:
+            self._create_simple_security_group()
+
+        if has_db_tier:
+            self._create_simple_db_security_group()
+
+        # Create EC2 instance(s) in public subnet
+        if has_web_tier:
+            web_quantity = self._get_quantity(ComponentRole.WEB_TIER)
+            self._create_simple_ec2_instances(web_quantity)
+
+        # Create RDS in public subnet (TIER 1 only - not recommended for production)
+        if has_db_tier:
+            self._create_simple_rds()
+
         return TopologyGraph(
             id=f"topo-{datetime.now(timezone.utc).strftime('%Y%m%d%H%M%S')}",
-            name=f"Simple Topology - {self.spec.region}",
+            name=f"Tier 1 (Hobby) - {self.spec.region}",
             nodes=self.nodes,
             edges=self.edges,
             metadata={
                 "created_at": datetime.now(timezone.utc).isoformat(),
                 "version": "0.1.0",
-                "mode": "simple",
+                "tier": 1,
+                "mode": "hobby",
                 "spec": self.spec.model_dump(),
             },
         )
     
-    def _build_full(self) -> TopologyGraph:
-        """Build the complete production-ready topology graph from spec."""
+    def _build_tier2(self) -> TopologyGraph:
+        """
+        Build TIER 2 (Production) topology.
+
+        Architecture:
+        - 2 Availability Zones (High Availability)
+        - Public Subnets for ALB
+        - Private Subnets for EC2 and RDS (security best practice)
+        - NAT Gateway for private subnet internet access
+        - Application Load Balancer for traffic distribution
+        - Database isolated in private subnet
+
+        Cost: ~$70+/mo (NAT: $32/mo, ALB: $16/mo, instances, RDS)
+        """
         # Always create base networking
         self._create_vpc()
         self._create_internet_gateway()
@@ -150,13 +221,14 @@ class TopologyBuilder:
 
         return TopologyGraph(
             id=f"topo-{datetime.now(timezone.utc).strftime('%Y%m%d%H%M%S')}",
-            name=f"Topology for {self.spec.region}",
+            name=f"Tier 2 (Production) - {self.spec.region}",
             nodes=self.nodes,
             edges=self.edges,
             metadata={
                 "created_at": datetime.now(timezone.utc).isoformat(),
                 "version": "0.1.0",
-                "mode": "full",
+                "tier": 2,
+                "mode": "production",
                 "spec": self.spec.model_dump(),
             },
         )
@@ -166,9 +238,11 @@ class TopologyBuilder:
         for comp in self.spec.components:
             if comp.role == role and comp.quantity:
                 return comp.quantity
-        # Defaults
+        # Defaults based on tier
         if role == ComponentRole.WEB_TIER:
-            return 2  # 2 instances for HA
+            # TIER 1: Default to 1 instance (cheap)
+            # TIER 2: Default to 2 instances (HA)
+            return 2 if self.tier == 2 else 1
         if role == ComponentRole.DB_TIER:
             return 1
         return 1
@@ -316,7 +390,7 @@ class TopologyBuilder:
         """Create EC2 instances in public subnet (simple mode)."""
         constraints = self._get_constraints(ComponentRole.WEB_TIER)
         instance_type = constraints.get("instance_type", "t3.micro")
-        
+
         for i in range(quantity):
             ec2_id = f"ec2-{i + 1}" if quantity > 1 else "ec2-instance"
             ec2_name = f"instance-{i + 1}" if quantity > 1 else "test-instance"
@@ -340,6 +414,89 @@ class TopologyBuilder:
             self._add_edge(EdgeKind.ATTACHED_TO, ec2_id, self.public_subnet_ids[0])
             if self.web_sg_id:
                 self._add_edge(EdgeKind.PROTECTED_BY, ec2_id, self.web_sg_id)
+
+    def _create_simple_db_security_group(self) -> None:
+        """Create a simple security group for database (allows access from web SG)."""
+        # Determine DB port from constraints
+        constraints = self._get_constraints(ComponentRole.DB_TIER)
+        engine = constraints.get("engine", "postgres")
+        db_port = 5432 if engine == "postgres" else 3306
+
+        self.db_sg_id = "sg-db"
+        ingress_rules = []
+
+        # Allow access from web security group if it exists
+        if self.web_sg_id:
+            ingress_rules.append({
+                "from_port": db_port,
+                "to_port": db_port,
+                "protocol": "tcp",
+                "source_security_group": self.web_sg_id,
+            })
+        else:
+            # Fallback: allow from VPC CIDR
+            ingress_rules.append({
+                "from_port": db_port,
+                "to_port": db_port,
+                "protocol": "tcp",
+                "cidr_blocks": ["10.0.0.0/16"],
+            })
+
+        self._add_node(
+            BaseNode(
+                id=self.db_sg_id,
+                kind=NodeKind.SECURITY_GROUP,
+                name="db-sg",
+                provider=Provider.AWS,
+                region=self.spec.region,
+                props={
+                    "description": "Security group for database",
+                    "ingress": ingress_rules,
+                    "egress": [],  # No outbound needed for database
+                },
+                tags={"Name": "topnet-db-sg", "ManagedBy": "TopNet"},
+            )
+        )
+        self._add_edge(EdgeKind.ATTACHED_TO, self.db_sg_id, self.vpc_id)
+
+        # Web -> DB traffic allowed
+        if self.web_sg_id:
+            self._add_edge(EdgeKind.ALLOWED_TRAFFIC, self.web_sg_id, self.db_sg_id, {"ports": [db_port]})
+
+    def _create_simple_rds(self) -> None:
+        """Create RDS database in public subnet (TIER 1 only - not recommended for production)."""
+        if not self.db_sg_id or not self.public_subnet_ids:
+            return
+
+        constraints = self._get_constraints(ComponentRole.DB_TIER)
+        engine = constraints.get("engine", "postgres")
+        engine_version = constraints.get("engine_version", "15.4" if engine == "postgres" else "8.0")
+        instance_class = constraints.get("instance_class", "db.t3.micro")
+        storage = constraints.get("allocated_storage", 20)
+
+        rds_id = "rds-main"
+        self._add_node(
+            BaseNode(
+                id=rds_id,
+                kind=NodeKind.DATABASE,
+                name="main-db",
+                provider=Provider.AWS,
+                region=self.spec.region,
+                az=f"{self.spec.region}a",
+                props={
+                    "engine": engine,
+                    "engine_version": engine_version,
+                    "instance_class": instance_class,
+                    "allocated_storage": storage,
+                    "subnet_ids": [self.public_subnet_ids[0]],  # Public subnet for TIER 1
+                    "security_groups": [self.db_sg_id],
+                    "multi_az": False,
+                    "publicly_accessible": False,  # Still not internet-facing, just in public subnet
+                },
+                tags={"Name": "topnet-db", "ManagedBy": "TopNet", "Tier": "1"},
+            )
+        )
+        self._add_edge(EdgeKind.ATTACHED_TO, rds_id, self.public_subnet_ids[0])
 
     # ========== FULL MODE METHODS ==========
 

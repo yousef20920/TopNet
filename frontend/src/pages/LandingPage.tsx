@@ -30,7 +30,7 @@ export function LandingPage() {
     const [isGenerating, setIsGenerating] = useState(false);
     const [error, setError] = useState<string | null>(null);
     const [hasStartedChat, setHasStartedChat] = useState(false);
-    const messagesEndRef = useRef<HTMLDivElement>(null);
+    const messagesContainerRef = useRef<HTMLDivElement>(null);
     const inputRef = useRef<HTMLTextAreaElement>(null);
 
     // Auto-focus input on mount
@@ -41,11 +41,17 @@ export function LandingPage() {
     }, [hasStartedChat]);
 
     const scrollToBottom = () => {
-        messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+        // Scroll the chat container, not the entire page
+        if (messagesContainerRef.current) {
+            messagesContainerRef.current.scrollTop = messagesContainerRef.current.scrollHeight;
+        }
     };
 
+    // Only auto-scroll when assistant sends a message (not on user messages)
     useEffect(() => {
-        scrollToBottom();
+        if (messages.length > 0 && messages[messages.length - 1].role === 'assistant') {
+            scrollToBottom();
+        }
     }, [messages]);
 
     const sendMessage = async () => {
@@ -247,33 +253,33 @@ export function LandingPage() {
                                         </div>
 
                                         <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                                            {/* Template 1: WordPress/Blog */}
+                                            {/* Template 1: Web Application */}
                                             <button
                                                 onClick={() => {
-                                                    setInput("I need a WordPress site with MySQL database and CDN for a small business");
+                                                    setInput("I want to deploy a simple web application with a database");
                                                     inputRef.current?.focus();
                                                 }}
                                                 className="group p-4 bg-white/5 hover:bg-indigo-500/10 border border-white/10 hover:border-indigo-500/30 rounded-xl text-left transition-all hover:scale-[1.02] relative overflow-hidden"
                                             >
                                                 <div className="flex items-start gap-3 mb-3">
-                                                    <div className="text-2xl">📝</div>
+                                                    <div className="text-2xl">🌐</div>
                                                     <div className="flex-1 min-w-0">
-                                                        <div className="text-sm font-semibold text-white mb-1 group-hover:text-indigo-300 transition-colors">WordPress / Blog</div>
-                                                        <div className="text-xs text-gray-500">EC2 + MySQL + Load Balancer</div>
+                                                        <div className="text-sm font-semibold text-white mb-1 group-hover:text-indigo-300 transition-colors">Web Application</div>
+                                                        <div className="text-xs text-gray-500">EC2 + Database</div>
                                                     </div>
                                                 </div>
                                                 <div className="flex items-center gap-2 pl-9">
                                                     <DollarSign className="w-3 h-3 text-emerald-400" />
-                                                    <span className="text-xs font-mono text-emerald-400">~$44/mo</span>
+                                                    <span className="text-xs font-mono text-emerald-400">~$28/mo</span>
                                                     <span className="text-xs text-gray-600">•</span>
-                                                    <span className="text-xs text-gray-500">+Load Balancer</span>
+                                                    <span className="text-xs text-gray-500">Budget-friendly</span>
                                                 </div>
                                             </button>
 
                                             {/* Template 2: MVP App */}
                                             <button
                                                 onClick={() => {
-                                                    setInput("I'm building a startup MVP - need a scalable backend API with PostgreSQL database");
+                                                    setInput("I'm building a startup MVP - need a backend API with PostgreSQL database");
                                                     inputRef.current?.focus();
                                                 }}
                                                 className="group p-4 bg-white/5 hover:bg-emerald-500/10 border border-white/10 hover:border-emerald-500/30 rounded-xl text-left transition-all hover:scale-[1.02] relative overflow-hidden"
@@ -282,14 +288,14 @@ export function LandingPage() {
                                                     <div className="text-2xl">🚀</div>
                                                     <div className="flex-1 min-w-0">
                                                         <div className="text-sm font-semibold text-white mb-1 group-hover:text-emerald-300 transition-colors">Startup MVP Backend</div>
-                                                        <div className="text-xs text-gray-500">API Server + PostgreSQL + HA</div>
+                                                        <div className="text-xs text-gray-500">API Server + PostgreSQL</div>
                                                     </div>
                                                 </div>
                                                 <div className="flex items-center gap-2 pl-9">
                                                     <DollarSign className="w-3 h-3 text-emerald-400" />
-                                                    <span className="text-xs font-mono text-emerald-400">~$77/mo</span>
+                                                    <span className="text-xs font-mono text-emerald-400">~$28/mo</span>
                                                     <span className="text-xs text-gray-600">•</span>
-                                                    <span className="text-xs text-gray-500">HA + NAT Gateway</span>
+                                                    <span className="text-xs text-gray-500">Perfect for MVPs</span>
                                                 </div>
                                             </button>
 
@@ -319,7 +325,7 @@ export function LandingPage() {
                                             {/* Template 4: Dev Environment */}
                                             <button
                                                 onClick={() => {
-                                                    setInput("I need a development environment with staging and production databases");
+                                                    setInput("I need a simple development environment for testing my app");
                                                     inputRef.current?.focus();
                                                 }}
                                                 className="group p-4 bg-white/5 hover:bg-blue-500/10 border border-white/10 hover:border-blue-500/30 rounded-xl text-left transition-all hover:scale-[1.02] relative overflow-hidden"
@@ -328,14 +334,14 @@ export function LandingPage() {
                                                     <div className="text-2xl">💼</div>
                                                     <div className="flex-1 min-w-0">
                                                         <div className="text-sm font-semibold text-white mb-1 group-hover:text-blue-300 transition-colors">Dev Environment</div>
-                                                        <div className="text-xs text-gray-500">Staging + Production Setup</div>
+                                                        <div className="text-xs text-gray-500">Testing & Development</div>
                                                     </div>
                                                 </div>
                                                 <div className="flex items-center gap-2 pl-9">
                                                     <DollarSign className="w-3 h-3 text-emerald-400" />
-                                                    <span className="text-xs font-mono text-emerald-400">~$104/mo</span>
+                                                    <span className="text-xs font-mono text-emerald-400">~$8/mo</span>
                                                     <span className="text-xs text-gray-600">•</span>
-                                                    <span className="text-xs text-gray-500">Staging + Production</span>
+                                                    <span className="text-xs text-gray-500">Single instance</span>
                                                 </div>
                                             </button>
 
@@ -379,9 +385,9 @@ export function LandingPage() {
                                                 </div>
                                                 <div className="flex items-center gap-2 pl-9">
                                                     <DollarSign className="w-3 h-3 text-emerald-400" />
-                                                    <span className="text-xs font-mono text-emerald-400">~$20/mo</span>
+                                                    <span className="text-xs font-mono text-emerald-400">~$28/mo</span>
                                                     <span className="text-xs text-gray-600">•</span>
-                                                    <span className="text-xs text-gray-500">Micro instance + DB</span>
+                                                    <span className="text-xs text-gray-500">EC2 + Database</span>
                                                 </div>
                                             </button>
                                         </div>
@@ -397,13 +403,13 @@ export function LandingPage() {
                                                     <DollarSign className="w-4 h-4 text-emerald-400" />
                                                 </div>
                                                 <div className="flex-1">
-                                                    <div className="text-sm font-semibold text-emerald-300 mb-1">Real AWS Pricing</div>
+                                                    <div className="text-sm font-semibold text-emerald-300 mb-1">Optimized for Budget</div>
                                                     <div className="text-xs text-gray-400 leading-relaxed">
-                                                        Costs calculated using AWS Pricing API. Includes EC2 instances, RDS databases, load balancers, and NAT gateways. Data transfer costs not included. See detailed breakdown before deploying.
+                                                        TopNet defaults to cost-effective architectures (~$8-30/mo) perfect for learning, hobby projects, and MVPs. No expensive NAT Gateways or Load Balancers unless you need high availability.
                                                     </div>
                                                     <div className="mt-2 flex items-center gap-2 text-xs text-gray-500">
                                                         <span>💡 Tip:</span>
-                                                        <span>Start with Free Tier eligible instances to minimize costs</span>
+                                                        <span>Say "production" or "high availability" to get enterprise-grade infrastructure</span>
                                                     </div>
                                                 </div>
                                             </div>
@@ -475,7 +481,7 @@ export function LandingPage() {
                                         )}
 
                                         {/* Chat Messages */}
-                                        <div className="h-[400px] overflow-y-auto p-4 space-y-4 custom-scrollbar">
+                                        <div ref={messagesContainerRef} className="h-[400px] overflow-y-auto p-4 space-y-4 custom-scrollbar">
                                             {/* Empty State */}
                                             {messages.length === 0 && !isLoading && (
                                                 <div className="h-full flex flex-col items-center justify-center text-center px-8">
@@ -594,8 +600,6 @@ export function LandingPage() {
                                                     </div>
                                                 </motion.div>
                                             )}
-
-                                            <div ref={messagesEndRef} />
                                         </div>
 
                                         {/* Generate Button - Shows when ready */}
