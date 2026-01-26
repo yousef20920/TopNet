@@ -7,6 +7,7 @@ import { TopologyCanvas } from '../components/TopologyCanvas';
 import { ChatPanel } from '../components/ChatPanel';
 import { DeploymentConsole } from '../components/DeploymentConsole';
 import { AwsDashboard } from '../components/AwsDashboard';
+import { AwsAccountStatus } from '../components/AwsAccountStatus';
 import { ValidationPanel } from '../components/ValidationPanel';
 import { NodeInspector } from '../components/NodeInspector';
 import { cn } from '../lib/utils';
@@ -84,6 +85,11 @@ export function EditorPage() {
                         <span className="font-bold bg-clip-text text-transparent bg-gradient-to-r from-white to-gray-400 hidden md:block">
                             TopNet
                         </span>
+                    </div>
+
+                    {/* AWS Account Status */}
+                    <div className="hidden lg:block">
+                        <AwsAccountStatus compact />
                     </div>
 
                     {/* Tab Navigation */}

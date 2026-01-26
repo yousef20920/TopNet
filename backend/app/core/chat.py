@@ -37,24 +37,41 @@ conversations: dict[str, ConversationState] = {}
 SYSTEM_PROMPT = """You are TopNet, an AI assistant that helps users design cloud infrastructure on AWS. Your job is to have a conversation with the user to understand what they want to build, then generate a topology specification.
 
 IMPORTANT RULES:
-1. Ask clarifying questions to understand the user's needs
-2. Be concise and friendly
-3. **EXPLAIN INFRASTRUCTURE**: When a user asks for "a server", explain that AWS requires basic networking:
+1. **LISTEN FIRST**: Carefully read what the user already told you. DON'T ask questions about things they already stated clearly.
+2. **ACKNOWLEDGE**: Start by acknowledging what you understood from their message
+3. **ASK SMART QUESTIONS**: Only ask about missing information, not things they already mentioned
+4. Be concise and friendly
+5. **EXPLAIN INFRASTRUCTURE**: When a user asks for "a server", explain that AWS requires basic networking:
    - Simple setup (1 server, no DB): "I'll create a minimal setup: VPC (network), subnet, security group (firewall), and your EC2 instance - about 6 resources total. This is the minimum AWS needs for a server."
    - Production setup: Mention VPC, subnets, load balancer, etc.
-4. When you have enough information, include a JSON spec block in your response
-5. Only include the JSON when you're confident you understand what the user wants
-6. NEVER put comments in the JSON - it must be valid JSON
-7. Use "web_tier" role for EC2 instances (web servers, app servers, test instances, API servers)
+6. When you have enough information, include a JSON spec block in your response
+7. Only include the JSON when you're confident you understand what the user wants
+8. NEVER put comments in the JSON - it must be valid JSON
+9. Use "web_tier" role for EC2 instances (web servers, app servers, test instances, API servers)
 
-Questions to consider asking:
-- What type of application? (web app, API, data processing, etc.)
-- Do they need a database? What type? (PostgreSQL, MySQL)
-- How many servers/instances?
-- Do they need high availability (multiple AZs)?
-- What region? (default: us-east-2 Ohio)
+INFORMATION TO GATHER (only ask if NOT already mentioned):
+- Application type (web app, API, data processing) - If they said "web application", DON'T ask this
+- Database needs - What type? (PostgreSQL, MySQL)
+- High availability - Multiple AZs? Load balancer? - If they said "highly available", you know the answer
+- Instance count - How many servers?
+- Region preference (default: us-east-2 Ohio if not specified)
   - IMPORTANT: Ohio = us-east-2, Virginia = us-east-1
-- Any specific instance sizes? (default: t3.micro)
+- Instance sizes (default: t3.micro if not specified)
+
+EXAMPLE OF GOOD RESPONSE:
+User: "I need a highly available web application with load balancer"
+You: "Perfect! I understand you need:
+✓ Highly available web application
+✓ Load balancer (I'll set up an Application Load Balancer)
+✓ Multiple availability zones for redundancy
+
+Just a couple quick questions:
+- Do you need a database? (PostgreSQL, MySQL, or no database?)
+- Any preference on region? (I'll use us-east-2 Ohio by default)"
+
+EXAMPLE OF BAD RESPONSE (DON'T DO THIS):
+User: "I need a highly available web application with load balancer"
+You: "Is this a web application, API, or something else?"  ← WRONG! They already said "web application"!
 
 When ready to generate, include this VALID JSON block (no comments!) in your response:
 ```json
@@ -257,7 +274,7 @@ Just describe what you need, and I'll help you configure it!"""
     # If we have enough info, generate the spec
     if has_web or has_db:
         components = []
-        
+
         if has_web:
             components.append({
                 "role": "web_tier",
@@ -265,7 +282,7 @@ Just describe what you need, and I'll help you configure it!"""
                 "description": f"{quantity} web server(s)",
                 "constraints": {"instance_type": instance_type}
             })
-        
+
         if has_db:
             components.append({
                 "role": "db_tier",
@@ -273,7 +290,7 @@ Just describe what you need, and I'll help you configure it!"""
                 "description": f"{db_engine.upper()} database",
                 "constraints": {"engine": db_engine, "instance_class": "db.t3.micro"}
             })
-        
+
         spec_json = json.dumps({
             "ready": True,
             "spec": {
@@ -282,9 +299,27 @@ Just describe what you need, and I'll help you configure it!"""
                 "components": components
             }
         }, indent=2)
-        
-        # Build response
-        response_parts = ["Great! Based on what you've told me, here's what I'll create:\n"]
+
+        # Build response - acknowledge what they said
+        response_parts = ["Perfect! I understand you need:\n"]
+
+        # List what we understood from their message
+        understood = []
+        if has_web:
+            if has_ha:
+                understood.append(f"✓ Highly available web application ({quantity} instances)")
+            else:
+                understood.append(f"✓ Web application ({quantity} instance{'s' if quantity > 1 else ''})")
+        if "load balancer" in msg_lower or "lb" in msg_lower:
+            understood.append("✓ Load balancer")
+        if "auto" in msg_lower and "scal" in msg_lower:
+            understood.append("✓ Auto-scaling capability")
+        if has_db:
+            understood.append(f"✓ {db_engine.upper()} database")
+
+        if understood:
+            response_parts.append("\n".join(understood))
+            response_parts.append("\n\nHere's what I'll create:\n")
         
         if has_web and not has_db and quantity == 1:
             # Simple mode - explain the minimal infrastructure
@@ -302,11 +337,25 @@ Just describe what you need, and I'll help you configure it!"""
             if has_db:
                 response_parts.append(f"- **RDS {db_engine.upper()}** database")
             response_parts.append(f"- **Networking**: VPC, subnets across 2 AZs, load balancer, NAT gateway, security groups, route tables")
-        
+
         response_parts.append(f"\n**Region:** {region}")
-        response_parts.append("\nDoes this look good? If yes, click **Generate Topology** below!")
+
+        # Only ask clarifying questions if we're missing key info
+        clarifying_questions = []
+        if not has_db and "database" not in msg_lower and "db" not in msg_lower:
+            clarifying_questions.append("- Do you need a database? (PostgreSQL/MySQL, or no database)")
+        if "region" not in msg_lower and region == "us-east-2":
+            clarifying_questions.append(f"- Region preference? (I'll use {region} by default)")
+
+        if clarifying_questions:
+            response_parts.append("\n\n**Quick question:**")
+            response_parts.extend(clarifying_questions)
+            response_parts.append("\nOr if this looks good, click **Generate Topology** below!")
+        else:
+            response_parts.append("\nDoes this look good? Click **Generate Topology** below!")
+
         response_parts.append(f"\n```json\n{spec_json}\n```")
-        
+
         return "\n".join(response_parts)
     
     # Need more info - ask follow-up questions

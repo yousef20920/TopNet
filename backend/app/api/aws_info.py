@@ -95,23 +95,44 @@ async def get_aws_dashboard(region: str = "us-east-1") -> AWSDashboard:
         # Get account info via STS
         sts = _get_boto3_client("sts", region)
         identity = sts.get_caller_identity()
-        
+
         dashboard.connected = True
         dashboard.account = AWSAccountInfo(
             account_id=identity.get("Account"),
             user_arn=identity.get("Arn"),
-            user_name=identity.get("Arn", "").split("/")[-1] if "/" in identity.get("Arn", "") else None,
             region=region,
         )
-        
-        # Try to get account alias
+
+        # Try to get the actual IAM username
+        user_name = None
         try:
             iam = _get_boto3_client("iam", region)
-            aliases = iam.list_account_aliases().get("AccountAliases", [])
-            if aliases:
-                dashboard.account.account_alias = aliases[0]
-        except Exception:
-            pass  # Alias is optional
+
+            # First try to get current user (works for IAM users)
+            try:
+                current_user = iam.get_user()
+                user_name = current_user.get("User", {}).get("UserName")
+            except Exception:
+                # If get_user fails, extract from ARN (works for roles)
+                arn = identity.get("Arn", "")
+                if "/" in arn:
+                    user_name = arn.split("/")[-1]
+
+            # Try to get account alias
+            try:
+                aliases = iam.list_account_aliases().get("AccountAliases", [])
+                if aliases:
+                    dashboard.account.account_alias = aliases[0]
+            except Exception:
+                pass  # Alias is optional
+        except Exception as e:
+            print(f"Error getting IAM info: {e}")
+            # Fall back to ARN extraction
+            arn = identity.get("Arn", "")
+            if "/" in arn:
+                user_name = arn.split("/")[-1]
+
+        dashboard.account.user_name = user_name
         
         # Get EC2 instances
         try:

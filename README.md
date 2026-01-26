@@ -1,16 +1,44 @@
 # TopNet
 
-> Natural-Language Cloud Network Topology Copilot
+> Natural-Language Cloud Network Topology Copilot for Individuals & Small Startups
 
-Turn plain-English infrastructure descriptions into validated, deployable cloud network topologies (graph + Terraform).
+Turn plain-English infrastructure descriptions into validated, deployable AWS architectures. Perfect for freelancers, hobbyists, and early-stage startups who need real infrastructure without enterprise complexity.
+
+## What You Can Build
+
+Perfect for the most common AWS use cases:
+
+- 📝 **WordPress / Blogs** - CMS with MySQL and load balancer
+- 🚀 **Startup MVPs** - Scalable backend APIs with PostgreSQL
+- 🎮 **Game Servers** - Minecraft, Valheim, or other multiplayer games
+- 🔒 **Personal VPNs** - Secure browsing while traveling
+- 🎨 **Portfolios** - Dynamic websites with contact forms and databases
+- 💼 **Dev Environments** - Staging and production setups
 
 ## Features
 
-- 🗣️ **Natural Language Input** - Describe your infrastructure in plain English
+- 🗣️ **Natural Language Input** - Describe your infrastructure in plain English via AI chat
 - 📊 **Visual Graph Editor** - Interactive topology visualization with React Flow
-- ✅ **Validation** - Automatic checks for overlapping CIDRs, orphaned nodes, security issues
-- 📄 **Terraform Output** - Generate deployment-ready Terraform JSON
+- ✅ **Security Validation** - Automatic checks for overlapping CIDRs, orphaned nodes, security issues
+- 💰 **Cost Estimation** - See estimated monthly AWS costs before deploying
 - 🚀 **One-Click Deploy** - Deploy directly to AWS with Terraform
+- 📈 **AWS Monitoring** - Real-time dashboard for deployed resources
+
+## What's Currently Supported
+
+**AWS Services:**
+- ✅ EC2 instances (web servers, app servers, game servers, VPNs)
+- ✅ RDS databases (PostgreSQL, MySQL)
+- ✅ Application Load Balancers
+- ✅ VPCs with public/private subnets
+- ✅ Security groups and networking
+- ✅ Multi-AZ high availability
+
+**Not Yet Supported:**
+- ❌ S3 + CloudFront (static websites)
+- ❌ Lambda (serverless functions)
+- ❌ DynamoDB (NoSQL databases)
+- ❌ EventBridge (scheduled jobs)
 
 ## Quick Start
 
