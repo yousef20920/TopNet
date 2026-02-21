@@ -34,74 +34,112 @@ class ConversationState(BaseModel):
 conversations: dict[str, ConversationState] = {}
 
 
-SYSTEM_PROMPT = """You are TopNet, an AI assistant that helps users design cloud infrastructure on AWS. Your job is to have a conversation with the user to understand what they want to build, then generate a topology specification.
+SYSTEM_PROMPT = """You are TopNet, an AI assistant that helps users design cloud infrastructure on AWS. Your job is to have a CONVERSATION with the user to understand what they want to build, then generate a topology specification.
 
-IMPORTANT RULES:
-1. **LISTEN FIRST**: Carefully read what the user already told you. DON'T ask questions about things they already stated clearly.
-2. **ACKNOWLEDGE**: Start by acknowledging what you understood from their message
-3. **ASK SMART QUESTIONS**: Only ask about missing information, not things they already mentioned
-4. Be concise and friendly
-5. **EXPLAIN INFRASTRUCTURE**: When a user asks for "a server", explain that AWS requires basic networking:
+🚨 CRITICAL RULES - READ CAREFULLY:
+
+1. **ALWAYS ASK QUESTIONS FIRST** - Never generate infrastructure on the first message! Always ask 2-3 clarifying questions.
+2. **LISTEN FIRST**: Carefully read what the user already told you. DON'T ask questions about things they already stated clearly.
+3. **ACKNOWLEDGE**: Start by acknowledging what you understood from their message
+4. **ASK SMART QUESTIONS**: Only ask about missing information, not things they already mentioned
+5. Be concise and friendly
+6. **EXPLAIN INFRASTRUCTURE**: When a user asks for "a server", explain that AWS requires basic networking:
    - Simple setup (1 server, no DB): "I'll create a minimal setup: VPC (network), subnet, security group (firewall), and your EC2 instance - about 6 resources total. This is the minimum AWS needs for a server."
    - Production setup: Mention VPC, subnets, load balancer, etc.
-6. When you have enough information, include a JSON spec block in your response
-7. Only include the JSON when you're confident you understand what the user wants
-8. NEVER put comments in the JSON - it must be valid JSON
-9. Use "web_tier" role for EC2 instances (web servers, app servers, test instances, API servers)
+7. **ONLY GENERATE AFTER USER CONFIRMS** - Wait for user to answer your questions OR say "yes, generate it"
+8. When ready to generate, include a JSON spec block in your response
+9. NEVER put comments in the JSON - it must be valid JSON
+10. Use "web_tier" role for EC2 instances (web servers, app servers, test instances, API servers)
 
-INFORMATION TO GATHER (only ask if NOT already mentioned):
+📋 INFORMATION TO GATHER (only ask if NOT already mentioned):
 - Application type (web app, API, data processing) - If they said "web application", DON'T ask this
-- Database needs - What type? (PostgreSQL, MySQL)
+- Database needs - Do they need one? What type? (PostgreSQL, MySQL, or none)
 - High availability - Multiple AZs? Load balancer? - If they said "highly available", you know the answer
-- Instance count - How many servers?
+- Instance count - How many servers? (default: 1 if not specified)
 - Region preference (default: us-east-2 Ohio if not specified)
   - IMPORTANT: Ohio = us-east-2, Virginia = us-east-1
-- Instance sizes (default: t3.micro if not specified)
+- Instance sizes (default: t3.micro for EC2, db.t2.micro for RDS if not specified)
 
-EXAMPLE OF GOOD RESPONSE:
-User: "I need a highly available web application with load balancer"
-You: "Perfect! I understand you need:
-✓ Highly available web application
-✓ Load balancer (I'll set up an Application Load Balancer)
-✓ Multiple availability zones for redundancy
+🎯 CONVERSATION FLOW:
+1. First message from user → Ask 2-3 clarifying questions, DON'T generate yet
+2. User answers questions → Ask if they want you to generate, OR if they say "yes/sounds good/let's do it" then generate
+3. Generate topology with JSON spec
 
-Just a couple quick questions:
-- Do you need a database? (PostgreSQL, MySQL, or no database?)
-- Any preference on region? (I'll use us-east-2 Ohio by default)"
+✅ EXAMPLE OF GOOD CONVERSATION FLOW:
 
-EXAMPLE OF BAD RESPONSE (DON'T DO THIS):
+**Turn 1:**
+User: "I need a web application with a database"
+You: "Got it! I'll help you set up a web application with a database.
+
+Quick questions to make sure I get this right:
+- What database engine do you prefer? (PostgreSQL or MySQL?)
+- How many web servers do you need? (I can start with 1 for simplicity)
+- Any specific AWS region? (I'll default to us-east-2 Ohio, which is cost-effective)
+
+Once you confirm, I'll generate the infrastructure design!"
+
+**Turn 2:**
+User: "PostgreSQL, 1 server is fine, use Ohio"
+You: "Perfect! Here's what I'll create for you:
+
+📦 Infrastructure Summary:
+• 1 EC2 web server (t3.micro) in Ohio
+• 1 RDS PostgreSQL database (db.t2.micro)
+• VPC with public subnet and security groups
+• ~$21/month estimated cost
+
+This is a TIER 1 setup - optimized for hobby/MVP projects (single AZ, no load balancer).
+
+[Generates JSON spec here]"
+
+❌ EXAMPLE OF BAD RESPONSE (DON'T DO THIS):
+User: "I need a web application with a database"
+You: "Here's what I'll create: [generates JSON immediately]"  ← WRONG! Ask questions first!
+
+❌ ANOTHER BAD EXAMPLE:
 User: "I need a highly available web application with load balancer"
 You: "Is this a web application, API, or something else?"  ← WRONG! They already said "web application"!
 
-When ready to generate, include this VALID JSON block (no comments!) in your response:
+🔧 WHEN TO GENERATE (ONLY after user answers your questions OR confirms):
+
+When the user has answered your questions and confirmed they want to proceed, include this VALID JSON block (no comments!) in your response:
+
 ```json
 {
   "ready": true,
   "spec": {
     "provider": "aws",
-    \"region\": \"us-east-2\",
+    "region": "us-east-2",
     "components": [
       {
         "role": "web_tier",
-        "quantity": 2,
-        "description": "Web servers",
+        "quantity": 1,
+        "description": "Web servers for hosting the application",
         "constraints": {"instance_type": "t3.micro"}
       },
       {
         "role": "db_tier",
         "quantity": 1,
         "description": "PostgreSQL database",
-        "constraints": {"engine": "postgres", "instance_class": "db.t3.micro"}
+        "constraints": {"engine": "postgres", "instance_class": "db.t2.micro"}
       }
     ]
   }
 }
 ```
 
-Valid roles: "web_tier" (for EC2/compute), "db_tier" (for RDS), "networking", "other"
-Valid engines: "postgres", "mysql"
+📝 Valid Configuration Options:
+- Roles: "web_tier" (for EC2/compute), "db_tier" (for RDS/database)
+- Database engines: "postgres", "mysql"
+- EC2 instances: "t3.micro", "t3.small", "t3.medium"
+- RDS instances: "db.t2.micro" (free tier), "db.t3.micro", "db.t3.small"
 
-Remember: Only include the JSON when you have gathered enough information. Otherwise, just chat normally and ask questions."""
+⚠️ IMPORTANT REMINDERS:
+1. NEVER generate JSON on the first message - ALWAYS ask questions first
+2. Only include JSON after user confirms or answers your questions
+3. If unsure, ask more questions rather than generating with defaults
+4. Always explain what you're about to create before generating
+5. Mention the cost estimate and tier level (TIER 1 vs TIER 2)"""
 
 
 def get_or_create_conversation(conversation_id: str | None = None) -> ConversationState:
@@ -137,34 +175,25 @@ def chat_with_bedrock(conversation: ConversationState, user_message: str) -> str
             "content": [{"text": user_message}]
         })
 
-        # Try models in order - Nova doesn't need approval, Claude does
-        models_to_try = [
-            "amazon.nova-micro-v1:0",                   # Amazon Nova Lite (no approval needed)
-            "anthropic.claude-3-haiku-20240307-v1:0",  # Claude Haiku (needs use case form)
-        ]
-        
-        last_error = None
-        for model_id in models_to_try:
-            try:
-                print(f"[chat] Trying model: {model_id}")
-                response = bedrock.converse(
-                    modelId=model_id,
-                    messages=messages,
-                    system=[{"text": SYSTEM_PROMPT}],
-                    inferenceConfig={
-                        "maxTokens": 1000,
-                        "temperature": 0.7,
-                    }
-                )
-                print(f"[chat] Success with model: {model_id}")
-                return response['output']['message']['content'][0]['text']
-            except Exception as e:
-                last_error = e
-                print(f"[chat] Model {model_id} failed: {e}")
-                continue
-        
-        # All models failed
-        raise last_error
+        # Use Amazon Nova
+        model_id = "amazon.nova-micro-v1:0"
+
+        try:
+            print(f"[chat] Calling model: {model_id}")
+            response = bedrock.converse(
+                modelId=model_id,
+                messages=messages,
+                system=[{"text": SYSTEM_PROMPT}],
+                inferenceConfig={
+                    "maxTokens": 1000,
+                    "temperature": 0.7,
+                }
+            )
+            print(f"[chat] Success with model: {model_id}")
+            return response['output']['message']['content'][0]['text']
+        except Exception as e:
+            print(f"[chat] Model {model_id} failed: {e}")
+            raise
 
     except Exception as e:
         import traceback
@@ -174,47 +203,14 @@ def chat_with_bedrock(conversation: ConversationState, user_message: str) -> str
         return generate_fallback_response(conversation, user_message)
 
 
-def chat_with_llm(conversation: ConversationState, user_message: str, api_key: str | None = None) -> str:
-    """Send message to LLM and get response. Tries Bedrock first, then OpenAI, then fallback."""
-    
+def chat_with_llm(conversation: ConversationState, user_message: str) -> str:
+    """Send message to LLM and get response. Tries AWS Bedrock, then rule-based fallback."""
+
     # Try AWS Bedrock first (uses AWS credentials from env)
     if os.environ.get('AWS_ACCESS_KEY_ID') or os.environ.get('AWS_PROFILE'):
-        print("[chat] Using AWS Bedrock (Claude)")
+        print("[chat] Using AWS Bedrock Nova")
         return chat_with_bedrock(conversation, user_message)
-    
-    # Try OpenAI if configured
-    api_key = api_key or os.environ.get("OPENAI_API_KEY")
-    if api_key:
-        print("[chat] Using OpenAI")
-        import httpx
-        
-        # Build messages for LLM
-        messages = [{"role": "system", "content": SYSTEM_PROMPT}]
-        for msg in conversation.messages:
-            messages.append({"role": msg.role, "content": msg.content})
-        messages.append({"role": "user", "content": user_message})
 
-        try:
-            response = httpx.post(
-                "https://api.openai.com/v1/chat/completions",
-                headers={
-                    "Authorization": f"Bearer {api_key}",
-                    "Content-Type": "application/json",
-                },
-                json={
-                    "model": "gpt-4o-mini",
-                    "messages": messages,
-                    "temperature": 0.7,
-                    "max_tokens": 1000,
-                },
-                timeout=30.0,
-            )
-            response.raise_for_status()
-            data = response.json()
-            return data["choices"][0]["message"]["content"]
-        except Exception as e:
-            print(f"OpenAI chat failed: {e}")
-    
     # Fall back to rule-based response
     print("[chat] Using rule-based fallback")
     return generate_fallback_response(conversation, user_message)
@@ -224,7 +220,7 @@ def generate_fallback_response(conversation: ConversationState, user_message: st
     """Generate a response without LLM using rules."""
     msg_lower = user_message.lower().strip()
     msg_count = len(conversation.messages)
-    
+
     # Greetings
     greetings = ["hi", "hello", "hey", "help", "start"]
     if msg_lower in greetings or msg_count == 0:
@@ -239,38 +235,87 @@ I'll help you design your AWS infrastructure. Let me ask a few questions:
 
 Just describe what you need, and I'll help you configure it!"""
 
-    # Check for infrastructure keywords
-    has_web = any(kw in msg_lower for kw in ["web", "server", "ec2", "instance", "api", "backend", "app"])
-    has_db = any(kw in msg_lower for kw in ["database", "db", "rds", "postgres", "mysql", "sql"])
-    has_ha = any(kw in msg_lower for kw in ["ha", "high availability", "redundant", "multiple", "2", "3", "two", "three"])
-    
-    # Extract numbers
+    # Check for infrastructure keywords in ENTIRE conversation (not just current message)
+    # This ensures we remember what user mentioned earlier
+    all_user_messages = " ".join([msg.content.lower() for msg in conversation.messages if msg.role == "user"])
+    has_web = any(kw in all_user_messages for kw in ["web", "server", "ec2", "instance", "api", "backend", "app"])
+    has_db = any(kw in all_user_messages for kw in ["database", "db", "rds", "postgres", "mysql", "sql"])
+    has_ha = any(kw in all_user_messages for kw in ["ha", "high availability", "redundant", "multiple", "2", "3", "two", "three"])
+
+    # Check for confirmation keywords
+    has_confirmation = any(kw in msg_lower for kw in ["yes", "confirm", "sounds good", "looks good", "let's do it", "go ahead", "proceed", "generate", "create it"])
+
+    # On first turn, always ask questions (unless they're confirming)
+    if msg_count <= 2 and not has_confirmation:
+        # Ask clarifying questions
+        response_parts = ["Got it! I'll help you set up "]
+
+        if has_web and has_db:
+            response_parts.append("a web application with a database.\n\n")
+        elif has_web:
+            response_parts.append("a web server.\n\n")
+        elif has_db:
+            response_parts.append("a database.\n\n")
+        else:
+            response_parts.append("your infrastructure.\n\n")
+
+        response_parts.append("Quick questions to make sure I get this right:\n\n")
+
+        questions = []
+
+        # Ask about database if mentioned but not specific (check entire conversation)
+        if has_db and not ("postgres" in all_user_messages or "mysql" in all_user_messages):
+            questions.append("- What database engine? (PostgreSQL or MySQL?)")
+
+        # Ask about quantity if not specified (check entire conversation)
+        if has_web and not has_ha and not re.search(r'\d+\s*(?:server|instance)', all_user_messages):
+            questions.append("- How many web servers? (I can start with 1 for simplicity)")
+
+        # Ask about region if not mentioned (check entire conversation)
+        if not any(r in all_user_messages for r in ["region", "ohio", "virginia", "west", "europe"]):
+            questions.append("- Any AWS region preference? (I'll default to us-east-2 Ohio)")
+
+        # Always ask at least one question
+        if not questions:
+            questions.append("- Should I proceed with the defaults? (t3.micro instances, us-east-2 region)")
+
+        response_parts.append("\n".join(questions))
+        response_parts.append("\n\nOnce you confirm, I'll generate the infrastructure design!")
+
+        return "".join(response_parts)
+
+    # If user is confirming or answering questions, proceed with generation
+    # Extract numbers (check entire conversation)
     quantity = 1
-    num_match = re.search(r'(\d+)\s*(?:server|instance|ec2)', msg_lower)
+    num_match = re.search(r'(\d+)\s*(?:server|instance|ec2)', all_user_messages)
     if num_match:
         quantity = int(num_match.group(1))
     elif has_ha:
         quantity = 2
-    
-    # Detect region
+
+    # Detect region (check entire conversation)
     region = "us-east-2"
-    if "west" in msg_lower:
+    if "ohio" in all_user_messages:
+        region = "us-east-2"
+    elif "west" in all_user_messages:
         region = "us-west-2"
-    elif "europe" in msg_lower or "eu" in msg_lower:
+    elif "europe" in all_user_messages or "eu" in all_user_messages:
         region = "eu-west-1"
-    
-    # Detect instance type
+
+    # Detect instance type (check current message only - user likely specifying size in follow-up)
     instance_type = "t3.micro"
     if "large" in msg_lower:
         instance_type = "t3.large"
     elif "medium" in msg_lower:
         instance_type = "t3.medium"
-    
-    # Detect DB engine
+
+    # Detect DB engine (check entire conversation - user mentioned this earlier)
     db_engine = "postgres"
-    if "mysql" in msg_lower:
+    if "mysql" in all_user_messages:
         db_engine = "mysql"
-    
+    elif "postgres" in all_user_messages:
+        db_engine = "postgres"
+
     # If we have enough info, generate the spec
     if has_web or has_db:
         components = []
@@ -340,11 +385,11 @@ Just describe what you need, and I'll help you configure it!"""
 
         response_parts.append(f"\n**Region:** {region}")
 
-        # Only ask clarifying questions if we're missing key info
+        # Only ask clarifying questions if we're missing key info (check entire conversation)
         clarifying_questions = []
-        if not has_db and "database" not in msg_lower and "db" not in msg_lower:
+        if not has_db:
             clarifying_questions.append("- Do you need a database? (PostgreSQL/MySQL, or no database)")
-        if "region" not in msg_lower and region == "us-east-2":
+        if "region" not in all_user_messages and "ohio" not in all_user_messages and region == "us-east-2":
             clarifying_questions.append(f"- Region preference? (I'll use {region} by default)")
 
         if clarifying_questions:

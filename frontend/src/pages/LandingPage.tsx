@@ -10,9 +10,8 @@ import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import { generateTopologyFromSpec } from '../api/topologyApi';
 import { AwsAccountStatus } from '../components/AwsAccountStatus';
+import { API_ORIGIN } from '../config/api';
 import { cn } from '../lib/utils';
-
-const API_BASE = 'http://localhost:3001';
 
 interface Message {
     role: 'user' | 'assistant';
@@ -30,7 +29,7 @@ export function LandingPage() {
     const [isGenerating, setIsGenerating] = useState(false);
     const [error, setError] = useState<string | null>(null);
     const [hasStartedChat, setHasStartedChat] = useState(false);
-    const messagesEndRef = useRef<HTMLDivElement>(null);
+    const messagesContainerRef = useRef<HTMLDivElement>(null);
     const inputRef = useRef<HTMLTextAreaElement>(null);
 
     // Auto-focus input on mount
@@ -41,11 +40,15 @@ export function LandingPage() {
     }, [hasStartedChat]);
 
     const scrollToBottom = () => {
-        messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+        if (messagesContainerRef.current) {
+            messagesContainerRef.current.scrollTop = messagesContainerRef.current.scrollHeight;
+        }
     };
 
     useEffect(() => {
-        scrollToBottom();
+        if (messages.length > 0 && messages[messages.length - 1].role === 'assistant') {
+            scrollToBottom();
+        }
     }, [messages]);
 
     const sendMessage = async () => {
@@ -63,7 +66,7 @@ export function LandingPage() {
 
             // Start session without showing greeting
             try {
-                const res = await fetch(`${API_BASE}/api/chat/start`, { method: 'POST' });
+                const res = await fetch(`${API_ORIGIN}/api/chat/start`, { method: 'POST' });
                 const data = await res.json();
                 currentSessionId = data.session_id;
                 setSessionId(currentSessionId);
@@ -79,7 +82,7 @@ export function LandingPage() {
         setMessages(prev => [...prev, { role: 'user', content: userMessage }]);
 
         try {
-            const res = await fetch(`${API_BASE}/api/chat/message`, {
+            const res = await fetch(`${API_ORIGIN}/api/chat/message`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ session_id: currentSessionId, message: userMessage })
@@ -243,103 +246,11 @@ export function LandingPage() {
                                     <div className="mt-8 space-y-4">
                                         <div className="text-center">
                                             <p className="text-xs font-medium text-gray-500 uppercase tracking-wider mb-1">Popular Templates</p>
-                                            <p className="text-xs text-gray-600">Click to auto-fill, then chat to customize</p>
+                                            <p className="text-xs text-gray-600">Click to auto-fill and start customizing</p>
                                         </div>
 
                                         <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                                            {/* Template 1: WordPress/Blog */}
-                                            <button
-                                                onClick={() => {
-                                                    setInput("I need a WordPress site with MySQL database and CDN for a small business");
-                                                    inputRef.current?.focus();
-                                                }}
-                                                className="group p-4 bg-white/5 hover:bg-indigo-500/10 border border-white/10 hover:border-indigo-500/30 rounded-xl text-left transition-all hover:scale-[1.02] relative overflow-hidden"
-                                            >
-                                                <div className="flex items-start gap-3 mb-3">
-                                                    <div className="text-2xl">📝</div>
-                                                    <div className="flex-1 min-w-0">
-                                                        <div className="text-sm font-semibold text-white mb-1 group-hover:text-indigo-300 transition-colors">WordPress / Blog</div>
-                                                        <div className="text-xs text-gray-500">EC2 + MySQL + Load Balancer</div>
-                                                    </div>
-                                                </div>
-                                                <div className="flex items-center gap-2 pl-9">
-                                                    <DollarSign className="w-3 h-3 text-emerald-400" />
-                                                    <span className="text-xs font-mono text-emerald-400">~$44/mo</span>
-                                                    <span className="text-xs text-gray-600">•</span>
-                                                    <span className="text-xs text-gray-500">+Load Balancer</span>
-                                                </div>
-                                            </button>
-
-                                            {/* Template 2: MVP App */}
-                                            <button
-                                                onClick={() => {
-                                                    setInput("I'm building a startup MVP - need a scalable backend API with PostgreSQL database");
-                                                    inputRef.current?.focus();
-                                                }}
-                                                className="group p-4 bg-white/5 hover:bg-emerald-500/10 border border-white/10 hover:border-emerald-500/30 rounded-xl text-left transition-all hover:scale-[1.02] relative overflow-hidden"
-                                            >
-                                                <div className="flex items-start gap-3 mb-3">
-                                                    <div className="text-2xl">🚀</div>
-                                                    <div className="flex-1 min-w-0">
-                                                        <div className="text-sm font-semibold text-white mb-1 group-hover:text-emerald-300 transition-colors">Startup MVP Backend</div>
-                                                        <div className="text-xs text-gray-500">API Server + PostgreSQL + HA</div>
-                                                    </div>
-                                                </div>
-                                                <div className="flex items-center gap-2 pl-9">
-                                                    <DollarSign className="w-3 h-3 text-emerald-400" />
-                                                    <span className="text-xs font-mono text-emerald-400">~$77/mo</span>
-                                                    <span className="text-xs text-gray-600">•</span>
-                                                    <span className="text-xs text-gray-500">HA + NAT Gateway</span>
-                                                </div>
-                                            </button>
-
-                                            {/* Template 3: Game Server */}
-                                            <button
-                                                onClick={() => {
-                                                    setInput("I want to host a Minecraft server for my friends - needs 4GB RAM");
-                                                    inputRef.current?.focus();
-                                                }}
-                                                className="group p-4 bg-white/5 hover:bg-purple-500/10 border border-white/10 hover:border-purple-500/30 rounded-xl text-left transition-all hover:scale-[1.02] relative overflow-hidden"
-                                            >
-                                                <div className="flex items-start gap-3 mb-3">
-                                                    <div className="text-2xl">🎮</div>
-                                                    <div className="flex-1 min-w-0">
-                                                        <div className="text-sm font-semibold text-white mb-1 group-hover:text-purple-300 transition-colors">Game Server</div>
-                                                        <div className="text-xs text-gray-500">Minecraft / Valheim / Private Gaming</div>
-                                                    </div>
-                                                </div>
-                                                <div className="flex items-center gap-2 pl-9">
-                                                    <DollarSign className="w-3 h-3 text-emerald-400" />
-                                                    <span className="text-xs font-mono text-emerald-400">~$30/mo</span>
-                                                    <span className="text-xs text-gray-600">•</span>
-                                                    <span className="text-xs text-gray-500">4GB RAM</span>
-                                                </div>
-                                            </button>
-
-                                            {/* Template 4: Dev Environment */}
-                                            <button
-                                                onClick={() => {
-                                                    setInput("I need a development environment with staging and production databases");
-                                                    inputRef.current?.focus();
-                                                }}
-                                                className="group p-4 bg-white/5 hover:bg-blue-500/10 border border-white/10 hover:border-blue-500/30 rounded-xl text-left transition-all hover:scale-[1.02] relative overflow-hidden"
-                                            >
-                                                <div className="flex items-start gap-3 mb-3">
-                                                    <div className="text-2xl">💼</div>
-                                                    <div className="flex-1 min-w-0">
-                                                        <div className="text-sm font-semibold text-white mb-1 group-hover:text-blue-300 transition-colors">Dev Environment</div>
-                                                        <div className="text-xs text-gray-500">Staging + Production Setup</div>
-                                                    </div>
-                                                </div>
-                                                <div className="flex items-center gap-2 pl-9">
-                                                    <DollarSign className="w-3 h-3 text-emerald-400" />
-                                                    <span className="text-xs font-mono text-emerald-400">~$104/mo</span>
-                                                    <span className="text-xs text-gray-600">•</span>
-                                                    <span className="text-xs text-gray-500">Staging + Production</span>
-                                                </div>
-                                            </button>
-
-                                            {/* Template 5: Personal VPN */}
+                                            {/* Template 1: Personal VPN */}
                                             <button
                                                 onClick={() => {
                                                     setInput("I want a personal VPN server for secure browsing while traveling");
@@ -347,11 +258,13 @@ export function LandingPage() {
                                                 }}
                                                 className="group p-4 bg-white/5 hover:bg-amber-500/10 border border-white/10 hover:border-amber-500/30 rounded-xl text-left transition-all hover:scale-[1.02] relative overflow-hidden"
                                             >
-                                                <div className="flex items-start gap-3 mb-3">
+                                                <div className="flex items-start gap-3 mb-2">
                                                     <div className="text-2xl">🔒</div>
                                                     <div className="flex-1 min-w-0">
                                                         <div className="text-sm font-semibold text-white mb-1 group-hover:text-amber-300 transition-colors">Personal VPN</div>
-                                                        <div className="text-xs text-gray-500">Secure browsing + Privacy</div>
+                                                        <div className="text-xs text-gray-500 leading-relaxed mb-2">
+                                                            Single EC2 instance. Perfect for privacy while traveling or accessing geo-restricted content.
+                                                        </div>
                                                     </div>
                                                 </div>
                                                 <div className="flex items-center gap-2 pl-9">
@@ -362,32 +275,134 @@ export function LandingPage() {
                                                 </div>
                                             </button>
 
-                                            {/* Template 6: Portfolio + DB */}
+                                            {/* Template 2: Simple Blog/Portfolio */}
                                             <button
                                                 onClick={() => {
-                                                    setInput("I need to host my portfolio website with a contact form that saves to a database");
+                                                    setInput("I need a simple server to host my personal blog - no database needed");
                                                     inputRef.current?.focus();
                                                 }}
-                                                className="group p-4 bg-white/5 hover:bg-pink-500/10 border border-white/10 hover:border-pink-500/30 rounded-xl text-left transition-all hover:scale-[1.02] relative overflow-hidden"
+                                                className="group p-4 bg-white/5 hover:bg-cyan-500/10 border border-white/10 hover:border-cyan-500/30 rounded-xl text-left transition-all hover:scale-[1.02] relative overflow-hidden"
                                             >
-                                                <div className="flex items-start gap-3 mb-3">
-                                                    <div className="text-2xl">🎨</div>
+                                                <div className="flex items-start gap-3 mb-2">
+                                                    <div className="text-2xl">📝</div>
                                                     <div className="flex-1 min-w-0">
-                                                        <div className="text-sm font-semibold text-white mb-1 group-hover:text-pink-300 transition-colors">Portfolio + Forms</div>
-                                                        <div className="text-xs text-gray-500">Website + Database + Contact Forms</div>
+                                                        <div className="text-sm font-semibold text-white mb-1 group-hover:text-cyan-300 transition-colors">Simple Blog/Portfolio</div>
+                                                        <div className="text-xs text-gray-500 leading-relaxed mb-2">
+                                                            Single web server. Ideal for static sites, personal blogs, or portfolios without backend needs.
+                                                        </div>
                                                     </div>
                                                 </div>
                                                 <div className="flex items-center gap-2 pl-9">
                                                     <DollarSign className="w-3 h-3 text-emerald-400" />
-                                                    <span className="text-xs font-mono text-emerald-400">~$20/mo</span>
+                                                    <span className="text-xs font-mono text-emerald-400">~$15/mo</span>
                                                     <span className="text-xs text-gray-600">•</span>
-                                                    <span className="text-xs text-gray-500">Micro instance + DB</span>
+                                                    <span className="text-xs text-gray-500">No database</span>
+                                                </div>
+                                            </button>
+
+                                            {/* Template 3: Startup MVP */}
+                                            <button
+                                                onClick={() => {
+                                                    setInput("I'm building a startup MVP - need a backend API with PostgreSQL database, keep it cheap");
+                                                    inputRef.current?.focus();
+                                                }}
+                                                className="group p-4 bg-white/5 hover:bg-indigo-500/10 border border-white/10 hover:border-indigo-500/30 rounded-xl text-left transition-all hover:scale-[1.02] relative overflow-hidden"
+                                            >
+                                                <div className="flex items-start gap-3 mb-2">
+                                                    <div className="text-2xl">🚀</div>
+                                                    <div className="flex-1 min-w-0">
+                                                        <div className="text-sm font-semibold text-white mb-1 group-hover:text-indigo-300 transition-colors">Startup MVP</div>
+                                                        <div className="text-xs text-gray-500 leading-relaxed mb-2">
+                                                            API server + PostgreSQL (single AZ). Great for early-stage startups testing product-market fit.
+                                                        </div>
+                                                    </div>
+                                                </div>
+                                                <div className="flex items-center gap-2 pl-9">
+                                                    <DollarSign className="w-3 h-3 text-emerald-400" />
+                                                    <span className="text-xs font-mono text-emerald-400">~$25/mo</span>
+                                                    <span className="text-xs text-gray-600">•</span>
+                                                    <span className="text-xs text-gray-500">Budget friendly</span>
+                                                </div>
+                                            </button>
+
+                                            {/* Template 4: Game Server */}
+                                            <button
+                                                onClick={() => {
+                                                    setInput("I want to host a Minecraft server for my friends - needs 4GB RAM and good performance");
+                                                    inputRef.current?.focus();
+                                                }}
+                                                className="group p-4 bg-white/5 hover:bg-purple-500/10 border border-white/10 hover:border-purple-500/30 rounded-xl text-left transition-all hover:scale-[1.02] relative overflow-hidden"
+                                            >
+                                                <div className="flex items-start gap-3 mb-2">
+                                                    <div className="text-2xl">🎮</div>
+                                                    <div className="flex-1 min-w-0">
+                                                        <div className="text-sm font-semibold text-white mb-1 group-hover:text-purple-300 transition-colors">Game Server</div>
+                                                        <div className="text-xs text-gray-500 leading-relaxed mb-2">
+                                                            4GB RAM instance. Perfect for Minecraft, Valheim, or other multiplayer game hosting.
+                                                        </div>
+                                                    </div>
+                                                </div>
+                                                <div className="flex items-center gap-2 pl-9">
+                                                    <DollarSign className="w-3 h-3 text-emerald-400" />
+                                                    <span className="text-xs font-mono text-emerald-400">~$30/mo</span>
+                                                    <span className="text-xs text-gray-600">•</span>
+                                                    <span className="text-xs text-gray-500">4GB RAM</span>
+                                                </div>
+                                            </button>
+
+                                            {/* Template 5: WordPress/CMS */}
+                                            <button
+                                                onClick={() => {
+                                                    setInput("I need to host a WordPress site with MySQL database for a client");
+                                                    inputRef.current?.focus();
+                                                }}
+                                                className="group p-4 bg-white/5 hover:bg-blue-500/10 border border-white/10 hover:border-blue-500/30 rounded-xl text-left transition-all hover:scale-[1.02] relative overflow-hidden"
+                                            >
+                                                <div className="flex items-start gap-3 mb-2">
+                                                    <div className="text-2xl">📰</div>
+                                                    <div className="flex-1 min-w-0">
+                                                        <div className="text-sm font-semibold text-white mb-1 group-hover:text-blue-300 transition-colors">WordPress/CMS</div>
+                                                        <div className="text-xs text-gray-500 leading-relaxed mb-2">
+                                                            EC2 + MySQL RDS. Optimized for WordPress, Drupal, or other CMS platforms with database.
+                                                        </div>
+                                                    </div>
+                                                </div>
+                                                <div className="flex items-center gap-2 pl-9">
+                                                    <DollarSign className="w-3 h-3 text-emerald-400" />
+                                                    <span className="text-xs font-mono text-emerald-400">~$35/mo</span>
+                                                    <span className="text-xs text-gray-600">•</span>
+                                                    <span className="text-xs text-gray-500">CMS optimized</span>
+                                                </div>
+                                            </button>
+
+                                            {/* Template 6: Production HA */}
+                                            <button
+                                                onClick={() => {
+                                                    setInput("I need a production-ready web application with high availability, load balancer, and database across multiple zones");
+                                                    inputRef.current?.focus();
+                                                }}
+                                                className="group p-4 bg-white/5 hover:bg-rose-500/10 border border-white/10 hover:border-rose-500/30 rounded-xl text-left transition-all hover:scale-[1.02] relative overflow-hidden"
+                                            >
+                                                <div className="flex items-start gap-3 mb-2">
+                                                    <div className="text-2xl">⚡</div>
+                                                    <div className="flex-1 min-w-0">
+                                                        <div className="text-sm font-semibold text-white mb-1 group-hover:text-rose-300 transition-colors">Production HA Setup</div>
+                                                        <div className="text-xs text-gray-500 leading-relaxed mb-2">
+                                                            Multi-AZ with ALB, NAT Gateway, private subnets. For production apps requiring 99.9% uptime.
+                                                        </div>
+                                                    </div>
+                                                </div>
+                                                <div className="flex items-center gap-2 pl-9">
+                                                    <DollarSign className="w-3 h-3 text-amber-400" />
+                                                    <span className="text-xs font-mono text-amber-400">~$70/mo</span>
+                                                    <span className="text-xs text-gray-600">•</span>
+                                                    <span className="text-xs text-gray-500">Enterprise ready</span>
                                                 </div>
                                             </button>
                                         </div>
 
                                         <p className="text-xs text-gray-600 text-center mt-4">
-                                            Or describe your own use case above ↑
+                                            💡 Each template is fully customizable through our AI chat
                                         </p>
 
                                         {/* Cost Info Banner */}
@@ -475,7 +490,7 @@ export function LandingPage() {
                                         )}
 
                                         {/* Chat Messages */}
-                                        <div className="h-[400px] overflow-y-auto p-4 space-y-4 custom-scrollbar">
+                                        <div ref={messagesContainerRef} className="h-[400px] overflow-y-auto p-4 space-y-4 custom-scrollbar">
                                             {/* Empty State */}
                                             {messages.length === 0 && !isLoading && (
                                                 <div className="h-full flex flex-col items-center justify-center text-center px-8">
@@ -594,8 +609,6 @@ export function LandingPage() {
                                                     </div>
                                                 </motion.div>
                                             )}
-
-                                            <div ref={messagesEndRef} />
                                         </div>
 
                                         {/* Generate Button - Shows when ready */}

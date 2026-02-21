@@ -9,9 +9,8 @@ import {
     AlertTriangle,
     User
 } from 'lucide-react';
+import { API_BASE } from '../config/api';
 import { cn } from '../lib/utils';
-
-const API_BASE = 'http://localhost:3001/api';
 
 interface AWSAccountInfo {
     account_id: string | null;
@@ -37,9 +36,23 @@ interface VPCInfo {
     state: string;
 }
 
+interface RDSInstance {
+    id: string;
+    engine: string;
+    version: string;
+    class: string;
+    status: string;
+    endpoint: string | null;
+    port: number | null;
+    az: string;
+    multi_az: boolean;
+    storage: number;
+}
+
 interface AWSResourceSummary {
     ec2: { total: number; running: number; stopped: number; instances: EC2Instance[] };
     vpcs: { total: number; vpcs: VPCInfo[] };
+    rds: { total: number; instances: RDSInstance[] };
     security_groups: number;
     subnets: number;
     load_balancers: number;
@@ -71,6 +84,7 @@ export function AwsDashboard() {
                 resources: {
                     ec2: { total: 0, running: 0, stopped: 0, instances: [] },
                     vpcs: { total: 0, vpcs: [] },
+                    rds: { total: 0, instances: [] },
                     security_groups: 0,
                     subnets: 0,
                     load_balancers: 0,
@@ -258,7 +272,8 @@ export function AwsDashboard() {
                         {data.resources.vpcs.vpcs.map((vpc: any) => (
                             <div
                                 key={vpc.id}
-                                onClick={() => window.open(`https://${region}.console.aws.amazon.com/vpc/home?region=${region}#VpcDetails:VpcId=${vpc.id}`, '_blank')} className="group p-4 bg-white/5 border border-white/5 rounded-xl hover:bg-white/10 hover:border-white/10 transition-all cursor-pointer relative overflow-hidden"
+                                onClick={() => window.open(`https://${region}.console.aws.amazon.com/vpc/home?region=${region}#VpcDetails:VpcId=${vpc.id}`, '_blank')}
+                                className="group p-4 bg-white/5 border border-white/5 rounded-xl hover:bg-white/10 hover:border-white/10 transition-all cursor-pointer relative overflow-hidden"
                             >
                                 <div className="absolute left-0 top-0 bottom-0 w-1 bg-gradient-to-b from-transparent via-blue-500 to-transparent opacity-0 group-hover:opacity-100 transition-opacity" />
                                 <div className="flex items-center justify-between mb-2">
@@ -287,6 +302,71 @@ export function AwsDashboard() {
                                         <span className="ml-2 text-gray-300 text-xs group-hover:text-white transition-colors">{vpc.state}</span>
                                     </div>
                                 </div>
+                            </div>
+                        ))}
+                    </div>
+                </div>
+            )}
+
+            {/* RDS Instance Details */}
+            {data.resources.rds?.instances && data.resources.rds.instances.length > 0 && (
+                <div className="mt-8">
+                    <h3 className="text-sm font-semibold text-gray-300 mb-4 flex items-center gap-2">
+                        RDS Databases <span className="text-gray-500 font-normal text-xs px-2 py-0.5 bg-white/5 rounded-full">Active</span>
+                    </h3>
+                    <div className="space-y-3">
+                        {data.resources.rds.instances.map((db: RDSInstance) => (
+                            <div
+                                key={db.id}
+                                onClick={() => window.open(`https://${region}.console.aws.amazon.com/rds/home?region=${region}#database:id=${db.id};is-cluster=false`, '_blank')}
+                                className="group p-4 bg-white/5 border border-white/5 rounded-xl hover:bg-white/10 hover:border-white/10 transition-all cursor-pointer relative overflow-hidden"
+                            >
+                                <div className="absolute left-0 top-0 bottom-0 w-1 bg-gradient-to-b from-transparent via-cyan-500 to-transparent opacity-0 group-hover:opacity-100 transition-opacity" />
+                                <div className="flex items-center justify-between mb-2">
+                                    <div className="flex items-center gap-3">
+                                        <div className="p-2 bg-black/40 rounded-lg">
+                                            <Database className="w-4 h-4 text-gray-400 group-hover:text-white transition-colors" />
+                                        </div>
+                                        <div>
+                                            <span className="font-semibold text-white block">{db.id}</span>
+                                            <span className="text-[10px] text-gray-500 font-mono">{db.engine} {db.version}</span>
+                                        </div>
+                                    </div>
+                                    <span className={cn(
+                                        "px-2.5 py-1 rounded-full text-xs font-medium flex items-center gap-1.5",
+                                        db.status === 'available' && "bg-emerald-500/10 text-emerald-400 border border-emerald-500/20",
+                                        db.status === 'creating' && "bg-yellow-500/10 text-yellow-400 border border-yellow-500/20",
+                                        db.status !== 'available' && db.status !== 'creating' && "bg-gray-700/50 text-gray-400 border border-gray-600/50"
+                                    )}>
+                                        <span className={cn("w-1.5 h-1.5 rounded-full",
+                                            db.status === 'available' ? "bg-emerald-400" :
+                                            db.status === 'creating' ? "bg-yellow-400 animate-pulse" : "bg-gray-400"
+                                        )} />
+                                        {db.status}
+                                    </span>
+                                </div>
+                                <div className="grid grid-cols-3 gap-4 mt-3 ml-[52px]">
+                                    <div>
+                                        <span className="text-gray-500 text-xs">Class</span>
+                                        <span className="ml-2 text-gray-300 font-mono text-xs group-hover:text-white transition-colors">{db.class}</span>
+                                    </div>
+                                    <div>
+                                        <span className="text-gray-500 text-xs">Zone</span>
+                                        <span className="ml-2 text-gray-300 font-mono text-xs group-hover:text-white transition-colors">{db.az}</span>
+                                    </div>
+                                    <div>
+                                        <span className="text-gray-500 text-xs">Storage</span>
+                                        <span className="ml-2 text-gray-300 text-xs group-hover:text-white transition-colors">{db.storage} GB</span>
+                                    </div>
+                                </div>
+                                {db.endpoint && (
+                                    <div className="mt-3 ml-[52px] pt-3 border-t border-white/5">
+                                        <div>
+                                            <span className="text-gray-500 text-xs">Endpoint</span>
+                                            <span className="ml-2 text-gray-400 font-mono text-[10px] group-hover:text-white transition-colors break-all">{db.endpoint}:{db.port}</span>
+                                        </div>
+                                    </div>
+                                )}
                             </div>
                         ))}
                     </div>

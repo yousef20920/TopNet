@@ -3,8 +3,7 @@
 
 import { useState, useEffect } from 'react';
 import type { TopologyGraph } from '../types/topology';
-
-const API_BASE = 'http://localhost:3001/api';
+import { API_BASE } from '../config/api';
 
 interface AWSAccountInfo {
   account_id: string | null;

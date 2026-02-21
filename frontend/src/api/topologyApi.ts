@@ -2,8 +2,7 @@
 // API client for topology endpoints
 
 import type { TopologyGraph, GenerateResponse, ValidationResult } from '../types/topology';
-
-const API_BASE = 'http://localhost:3001/api';
+import { API_BASE } from '../config/api';
 
 export async function generateTopology(prompt: string): Promise<GenerateResponse> {
   const response = await fetch(`${API_BASE}/topologies/generate`, {

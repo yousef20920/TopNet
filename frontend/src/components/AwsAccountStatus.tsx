@@ -1,8 +1,7 @@
 import { useState, useEffect } from 'react';
 import { Cloud, AlertCircle, Loader2 } from 'lucide-react';
+import { API_BASE } from '../config/api';
 import { cn } from '../lib/utils';
-
-const API_BASE = 'http://localhost:3001/api';
 
 interface AWSAccountInfo {
     account_id: string | null;

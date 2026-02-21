@@ -61,6 +61,8 @@ class DeployResponse(BaseModel):
     deployment_id: str
     status: DeploymentStatus
     message: str
+    error: str | None = None
+    apply_output: str | None = None
 
 
 class PlanRequest(BaseModel):
@@ -261,7 +263,9 @@ async def apply_deployment(deployment_id: str) -> DeployResponse:
     return DeployResponse(
         deployment_id=deployment_id,
         status=deployment.status,
-        message=deployment.message or ""
+        message=deployment.message or "",
+        error=deployment.error,
+        apply_output=deployment.apply_output
     )
 
 

@@ -3,6 +3,7 @@ import type { TopologyGraph } from '../types/topology';
 import type { Stage, LogEntry, PlanSummary } from '../types/deployment';
 import { LogPanel } from './LogPanel';
 import { DeploymentControl } from './DeploymentControl';
+import { API_ORIGIN } from '../config/api';
 import { cn } from '../lib/utils';
 
 interface DeploymentConsoleProps {
@@ -10,12 +11,10 @@ interface DeploymentConsoleProps {
     isOpen: boolean;
     onClose: () => void;
     viewMode?: 'overlay' | 'full';
+    chatPanelWidth?: number; // Width of the chat panel on the left (in px)
 }
 
-
-const API_BASE = 'http://localhost:3001';
-
-export function DeploymentConsole({ topology, isOpen, onClose, viewMode = 'overlay' }: DeploymentConsoleProps) {
+export function DeploymentConsole({ topology, isOpen, onClose, viewMode = 'overlay', chatPanelWidth = 320 }: DeploymentConsoleProps) {
     const [stage, setStage] = useState<Stage>('idle');
     const [logs, setLogs] = useState<LogEntry[]>([]);
     const [deploymentId, setDeploymentId] = useState<string | null>(null);
@@ -49,7 +48,7 @@ export function DeploymentConsole({ topology, isOpen, onClose, viewMode = 'overl
             setStage('plan');
             addLog('Generating Terraform plan...', 'info');
 
-            const planRes = await fetch(`${API_BASE}/api/deploy/plan`, {
+            const planRes = await fetch(`${API_ORIGIN}/api/deploy/plan`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ topology })
@@ -69,20 +68,27 @@ export function DeploymentConsole({ topology, isOpen, onClose, viewMode = 'overl
             const resourceList = resourceMatches.map((m: string) => m.replace('# ', '').replace(' will be created', ''));
             const resourceCount = resourceList.length;
 
-            // Log the plan
-            addLog('─── Terraform Plan ───', 'info');
+            // Log only important plan info
+            addLog('Terraform plan generated successfully', 'success');
             const lines = planOutput.split('\n');
+            let resourcesFound = 0;
             lines.forEach((line: string) => {
-                if (line.trim()) {
-                    if (line.includes('will be created') || line.includes('+ create')) {
-                        addLog(line, 'success');
-                    } else if (line.includes('Error')) {
-                        addLog(line, 'error');
-                    } else {
-                        addLog(line, 'info');
+                if (line.includes('will be created') && line.includes('aws_')) {
+                    resourcesFound++;
+                    // Only log first 5 resources to avoid spam
+                    if (resourcesFound <= 5) {
+                        const resourceName = line.match(/# (aws_\w+\.\w+)/)?.[1];
+                        if (resourceName) {
+                            addLog(`  ✓ ${resourceName}`, 'success');
+                        }
                     }
+                } else if (line.includes('Error')) {
+                    addLog(line, 'error');
                 }
             });
+            if (resourcesFound > 5) {
+                addLog(`  ... and ${resourcesFound - 5} more resources`, 'info');
+            }
 
             if (planData.status === 'failed') {
                 setStage('failed');
@@ -105,11 +111,10 @@ export function DeploymentConsole({ topology, isOpen, onClose, viewMode = 'overl
             // Move to review stage
             setStage('review');
             setIsLogExpanded(false); // Collapse logs for clearer review
-            addLog('✓ Plan complete!', 'success');
-            addLog(`📊 ${resourceCount} AWS resources will be created`, 'info');
-            addLog(`💰 Estimated cost: ~$${estimatedCost.toFixed(2)}/month`, 'warning');
-            addLog('─────────────────────────', 'info');
-            addLog('⚠️  Review the plan in the Deployment Pipeline, then click "Confirm & Deploy" to proceed.', 'warning');
+            addLog('Plan generated successfully', 'success');
+            addLog(`${resourceCount} resources ready to deploy`, 'info');
+            addLog(`Estimated cost: $${estimatedCost.toFixed(2)}/month`, 'info');
+            addLog('Review the summary above and click "Confirm & Deploy" to proceed', 'info');
 
         } catch (err) {
             setStage('failed');
@@ -127,11 +132,9 @@ export function DeploymentConsole({ topology, isOpen, onClose, viewMode = 'overl
         try {
             setStage('apply');
             setIsLogExpanded(true);
-            addLog('─────────────────────────', 'info');
-            addLog('🚀 User confirmed. Running terraform apply...', 'warning');
-            addLog('⚠️  Creating REAL AWS resources in your account...', 'warning');
+            addLog('Starting deployment to AWS...', 'info');
 
-            const applyRes = await fetch(`${API_BASE}/api/deploy/apply/${deploymentId}`, {
+            const applyRes = await fetch(`${API_ORIGIN}/api/deploy/apply/${deploymentId}`, {
                 method: 'POST'
             });
 
@@ -142,35 +145,70 @@ export function DeploymentConsole({ topology, isOpen, onClose, viewMode = 'overl
 
             const applyData = await applyRes.json();
 
-            // Show apply output
+            // Show apply output (filtered for important messages only)
             if (applyData.apply_output) {
-                addLog('─── Terraform Apply ───', 'info');
+                addLog('Deploying resources to AWS...', 'info');
                 const lines = applyData.apply_output.split('\n');
+                let createdCount = 0;
+                let shownCount = 0;
+
                 lines.forEach((line: string) => {
-                    if (line.trim()) {
-                        if (line.includes('Creating') || line.includes('created')) {
-                            addLog(line, 'success');
-                        } else if (line.includes('Error')) {
-                            addLog(line, 'error');
-                        } else {
-                            addLog(line, 'info');
+                    const trimmed = line.trim();
+                    if (!trimmed) return;
+
+                    // Count and show only first 3 resource creations
+                    if (trimmed.includes('aws_') && (trimmed.includes(': Creation complete') || trimmed.includes(': created'))) {
+                        createdCount++;
+                        if (shownCount < 3) {
+                            const resourceName = trimmed.match(/aws_\w+\.\w+/)?.[0];
+                            if (resourceName) {
+                                addLog(`  ✓ Created ${resourceName}`, 'success');
+                                shownCount++;
+                            }
                         }
+                    } else if (trimmed.includes('Error') || trimmed.includes('error')) {
+                        addLog(trimmed, 'error');
+                    } else if (trimmed.includes('Apply complete!')) {
+                        addLog(trimmed, 'success');
                     }
                 });
+
+                if (createdCount > 3) {
+                    addLog(`  ✓ ... and ${createdCount - 3} more resources created`, 'success');
+                }
             }
 
             if (applyData.status === 'completed') {
                 setStage('complete');
                 setIsLogExpanded(false);
-                addLog('─────────────────────────', 'info');
-                addLog('✓ ✓ Deployment completed successfully! 🚀', 'success');
-                addLog('✓ Resources are now live in your AWS account.', 'success');
+                addLog('Deployment completed successfully!', 'success');
+                addLog('All resources are now live in your AWS account', 'success');
                 addLog(`Deployment ID: ${deploymentId}`, 'info');
             } else {
                 setStage('failed');
-                addLog('✗ Deployment failed.', 'error');
+                addLog('Deployment failed', 'error');
+
                 if (applyData.error) {
-                    addLog(`Error: ${applyData.error}`, 'error');
+                    // Extract key error message
+                    const errorText = applyData.error;
+                    if (errorText.includes('Error:')) {
+                        const errorMatch = errorText.match(/Error: ([^\n]+)/);
+                        if (errorMatch) {
+                            addLog(errorMatch[1], 'error');
+                        }
+                    }
+                    // Show full error details
+                    const errorLines = errorText.split('\n');
+                    let showingDetails = false;
+                    errorLines.forEach((line: string) => {
+                        const trimmed = line.trim();
+                        if (trimmed.includes('api error') || trimmed.includes('Cannot find') || trimmed.includes('InvalidParameter')) {
+                            showingDetails = true;
+                        }
+                        if (showingDetails && trimmed && !trimmed.startsWith('with aws_')) {
+                            addLog(trimmed, 'error');
+                        }
+                    });
                 }
             }
 
@@ -192,7 +230,7 @@ export function DeploymentConsole({ topology, isOpen, onClose, viewMode = 'overl
         addLog('Destroying infrastructure...', 'warning');
 
         try {
-            const res = await fetch(`${API_BASE}/api/deploy/destroy`, {
+            const res = await fetch(`${API_ORIGIN}/api/deploy/destroy`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ deployment_id: deploymentId })
@@ -235,7 +273,10 @@ export function DeploymentConsole({ topology, isOpen, onClose, viewMode = 'overl
                 isExpanded={isLogExpanded}
                 onToggleExpand={() => setIsLogExpanded(!isLogExpanded)}
                 onClose={onClose}
-                style={{ right: viewMode === 'full' ? '0' : '400px' }}
+                style={{
+                    left: `${chatPanelWidth}px`,  // Always account for chat panel (0 when closed, 320 when open)
+                    right: viewMode === 'full' ? '0' : '400px'
+                }}
             />
 
             {/* Right Control Panel */}

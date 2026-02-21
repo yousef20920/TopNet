@@ -2,6 +2,7 @@ import { useState, useRef, useEffect } from 'react';
 import { Send, Loader2, Sparkles, Bot, User, Wand2, RotateCcw } from 'lucide-react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
+import { API_ORIGIN } from '../config/api';
 import { cn } from '../lib/utils';
 
 interface Message {
@@ -15,8 +16,6 @@ interface ChatPanelProps {
     initialMessages?: Message[];
     initialSessionId?: string | null;
 }
-
-const API_BASE = 'http://localhost:3001';
 
 export function ChatPanel({ onGenerateTopology, isGenerating, initialMessages, initialSessionId }: ChatPanelProps) {
     const [messages, setMessages] = useState<Message[]>(initialMessages ?? []);
@@ -39,7 +38,7 @@ export function ChatPanel({ onGenerateTopology, isGenerating, initialMessages, i
 
     const startNewSession = async () => {
         try {
-            const res = await fetch(`${API_BASE}/api/chat/start`, {
+            const res = await fetch(`${API_ORIGIN}/api/chat/start`, {
                 method: 'POST',
             });
             const data = await res.json();
@@ -74,7 +73,7 @@ export function ChatPanel({ onGenerateTopology, isGenerating, initialMessages, i
         setIsLoading(true);
 
         try {
-            const res = await fetch(`${API_BASE}/api/chat/message`, {
+            const res = await fetch(`${API_ORIGIN}/api/chat/message`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({

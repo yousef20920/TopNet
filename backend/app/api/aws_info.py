@@ -42,10 +42,17 @@ class VPCSummary(BaseModel):
     vpcs: list[dict[str, Any]] = []
 
 
+class RDSSummary(BaseModel):
+    """RDS instances summary."""
+    total: int = 0
+    instances: list[dict[str, Any]] = []
+
+
 class AWSResourceSummary(BaseModel):
     """Summary of AWS resources."""
     ec2: EC2Summary = EC2Summary()
     vpcs: VPCSummary = VPCSummary()
+    rds: RDSSummary = RDSSummary()
     security_groups: int = 0
     subnets: int = 0
     load_balancers: int = 0
@@ -229,13 +236,33 @@ async def get_aws_dashboard(region: str = "us-east-1") -> AWSDashboard:
         except Exception:
             pass
         
-        # Get RDS instances count
+        # Get RDS instances
         try:
             rds = _get_boto3_client("rds", region)
-            dbs = rds.describe_db_instances()
-            dashboard.resources.rds_instances = len(dbs.get("DBInstances", []))
-        except Exception:
-            pass
+            dbs_response = rds.describe_db_instances()
+
+            instances = []
+            for db in dbs_response.get("DBInstances", []):
+                instances.append({
+                    "id": db.get("DBInstanceIdentifier"),
+                    "engine": db.get("Engine"),
+                    "version": db.get("EngineVersion"),
+                    "class": db.get("DBInstanceClass"),
+                    "status": db.get("DBInstanceStatus"),
+                    "endpoint": db.get("Endpoint", {}).get("Address") if db.get("Endpoint") else None,
+                    "port": db.get("Endpoint", {}).get("Port") if db.get("Endpoint") else None,
+                    "az": db.get("AvailabilityZone"),
+                    "multi_az": db.get("MultiAZ", False),
+                    "storage": db.get("AllocatedStorage"),
+                })
+
+            dashboard.resources.rds = RDSSummary(
+                total=len(instances),
+                instances=instances[:10],  # Limit to first 10
+            )
+            dashboard.resources.rds_instances = len(instances)
+        except Exception as e:
+            print(f"Error fetching RDS: {e}")
         
     except Exception as e:
         dashboard.connected = False

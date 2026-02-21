@@ -236,6 +236,7 @@ export function EditorPage() {
                             isOpen={true} // Always "open" in this tab
                             onClose={() => { }} // No close button needed in tab mode
                             viewMode="full"
+                            chatPanelWidth={isSidebarOpen ? 320 : 0} // Dynamic chat panel width
                         />
                     </div>
 

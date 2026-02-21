@@ -370,28 +370,83 @@ class TerraformGenerator:
     
     def _add_rds(self, node: BaseNode) -> None:
         """Add aws_db_subnet_group and aws_db_instance resources."""
+        from app.core import BaseNode as BNode, NodeKind as NK, Provider
+
         if "aws_db_subnet_group" not in self.resources:
             self.resources["aws_db_subnet_group"] = {}
         if "aws_db_instance" not in self.resources:
             self.resources["aws_db_instance"] = {}
-        
+        if "aws_subnet" not in self.resources:
+            self.resources["aws_subnet"] = {}
+
         name = _sanitize_name(node.id)
-        
+
         # Find all database subnets for the subnet group
         db_subnets = [n for n in self.graph.nodes if n.kind == NodeKind.SUBNET and "db" in n.id.lower()]
         if not db_subnets:
             # Fall back to private subnets
             db_subnets = [n for n in self.graph.nodes if n.kind == NodeKind.SUBNET and "private" in n.id.lower()]
-        
-        subnet_refs = [f"${{aws_subnet.{_sanitize_name(s.id)}.id}}" for s in db_subnets[:2]]
-        
-        # Need at least 2 subnets for RDS
-        if len(subnet_refs) < 2:
-            subnet_refs = subnet_refs * 2  # Duplicate if only one
+        if not db_subnets:
+            # Fall back to ANY subnet (for TIER 1 which only has public subnets)
+            db_subnets = [n for n in self.graph.nodes if n.kind == NodeKind.SUBNET]
+
+        subnet_refs = [f"${{aws_subnet.{_sanitize_name(s.id)}.id}}" for s in db_subnets]
+
+        # RDS requires at least 2 subnets in different AZs
+        # If we only have 1 subnet, auto-create a second one in a different AZ
+        if len(subnet_refs) < 2 and len(db_subnets) == 1:
+            original_subnet = db_subnets[0]
+
+            # Find VPC CIDR to allocate new subnet
+            vpc_node = next((n for n in self.graph.nodes if n.kind == NodeKind.NETWORK), None)
+            if not vpc_node:
+                # Can't create subnet without VPC, fall back to duplicating (will fail but at least try)
+                subnet_refs = subnet_refs * 2
+            else:
+                # Create second subnet in different AZ
+                second_subnet_id = f"{original_subnet.id}-az2"
+                original_az = original_subnet.az or f"{original_subnet.region}a"
+                # Change last character from 'a' to 'b' for different AZ
+                second_az = original_az[:-1] + 'b'
+
+                # Add second subnet to graph
+                second_subnet = BNode(
+                    id=second_subnet_id,
+                    kind=NK.SUBNET,
+                    name=f"{original_subnet.name}-az2" if original_subnet.name else f"{second_subnet_id}",
+                    provider=Provider.AWS,
+                    region=original_subnet.region,
+                    az=second_az,
+                    props={
+                        "cidr_block": "10.0.2.0/24",  # Non-overlapping CIDR
+                        "is_public": original_subnet.props.get("is_public", False),
+                        "map_public_ip_on_launch": original_subnet.props.get("map_public_ip_on_launch", False),
+                    },
+                    tags={"Name": f"topnet-auto-{second_subnet_id}", "ManagedBy": "TopNet", "AutoCreated": "true"},
+                )
+                self.graph.nodes.append(second_subnet)
+
+                # Add Terraform resource for second subnet
+                subnet_tf_name = _sanitize_name(second_subnet_id)
+                self.resources["aws_subnet"][subnet_tf_name] = {
+                    "vpc_id": f"${{aws_vpc.{_sanitize_name(vpc_node.id)}.id}}",
+                    "cidr_block": "10.0.2.0/24",
+                    "availability_zone": second_az,
+                    "map_public_ip_on_launch": second_subnet.props.get("map_public_ip_on_launch", False),
+                    "tags": second_subnet.tags or {"Name": second_subnet.name or second_subnet.id}
+                }
+
+                # Add the new subnet to our reference list
+                subnet_refs.append(f"${{aws_subnet.{subnet_tf_name}.id}}")
         
         sg_name = f"{name}_subnet_group"
+        # Use a timestamp-based name to avoid conflicts
+        import time
+        timestamp = str(int(time.time()))
+        db_sg_name = f"{(node.name or node.id)[:20]}-sg-{timestamp}"
+
         self.resources["aws_db_subnet_group"][sg_name] = {
-            "name": f"{(node.name or node.id)[:32]}-subnet-group",
+            "name": db_sg_name,
             "subnet_ids": subnet_refs,
             "tags": {"Name": f"{node.name or node.id}-subnet-group"}
         }
@@ -403,12 +458,12 @@ class TerraformGenerator:
         self.resources["aws_db_instance"][name] = {
             "identifier": (node.name or node.id)[:63],
             "engine": node.props.get("engine", "postgres"),
-            "engine_version": node.props.get("engine_version", "15"),
-            "instance_class": node.props.get("instance_class", "db.t3.micro"),
+            "engine_version": node.props.get("engine_version", "14"),
+            "instance_class": node.props.get("instance_class", "db.t2.micro"),
             "allocated_storage": node.props.get("allocated_storage", 20),
             "db_name": "topnetdb",
-            "username": "admin",
-            "password": "CHANGE_ME_PLEASE_123!",  # Should use secrets manager in production
+            "username": "topnetadmin",
+            "password": "TopNet2024!Secure",  # Should use secrets manager in production
             "db_subnet_group_name": f"${{aws_db_subnet_group.{sg_name}.name}}",
             "vpc_security_group_ids": sg_refs,
             "skip_final_snapshot": True,

@@ -95,82 +95,38 @@ export function DeploymentControl({
                         </div>
                     )}
 
-                    {/* Status Header */}
-                    <div className="p-6 border-b border-white/5 bg-gradient-to-b from-white/5 to-transparent rounded-xl mb-6">
-                        <div className="flex items-center justify-between mb-4">
-                            <div>
-                                <h2 className="text-lg font-bold text-white mb-1">Pipeline Status</h2>
-                                <p className="text-xs text-gray-400">Current Stage: <span className="font-mono text-indigo-400">{stage}</span></p>
-                            </div>
-                        </div>
+                    {/* Status Header - Simplified */}
+                    <div className="mb-6">
+                        <h2 className="text-base font-semibold text-white mb-4">Deployment Pipeline</h2>
 
-                        {/* Simple Pipeline Visualizer */}
-                        <div className="flex items-center justify-between relative mt-6 px-2">
+                        {/* Compact Pipeline Visualizer */}
+                        <div className="flex items-center justify-between relative px-2">
                             {/* Connecting Line */}
                             <div className="absolute top-1/2 left-0 w-full h-0.5 bg-white/10 -z-10" />
 
                             {['plan', 'review', 'apply', 'complete'].map((s, idx) => {
                                 const steps = ['plan', 'review', 'apply', 'complete'];
                                 const currentIdx = steps.indexOf(stage === 'connect' ? 'plan' : (stage === 'failed' ? 'plan' : stage));
-                                // simplistic mapping
                                 const stepIdx = idx;
                                 const isCompleted = currentIdx > stepIdx || stage === 'complete';
                                 const isCurrent = currentIdx === stepIdx;
 
                                 return (
-                                    <div key={s} className="flex flex-col items-center gap-2 bg-[#0c0c0e] px-2">
+                                    <div key={s} className="flex flex-col items-center gap-1.5 bg-[#0c0c0e] px-2">
                                         <div className={cn(
-                                            "w-3 h-3 rounded-full border-2 transition-all",
-                                            isCompleted ? "bg-green-500 border-green-500" :
-                                                isCurrent ? "bg-indigo-500 border-indigo-500 shadow-[0_0_10px_rgba(99,102,241,0.5)]" :
-                                                    "bg-gray-800 border-gray-700"
+                                            "w-2.5 h-2.5 rounded-full transition-all",
+                                            isCompleted ? "bg-emerald-500 shadow-[0_0_8px_rgba(16,185,129,0.4)]" :
+                                                isCurrent ? "bg-indigo-500 shadow-[0_0_10px_rgba(99,102,241,0.5)] animate-pulse" :
+                                                    "bg-gray-800"
                                         )} />
                                         <span className={cn(
                                             "text-[10px] font-medium uppercase tracking-wider transition-colors",
-                                            isCompleted || isCurrent ? "text-gray-200" : "text-gray-600"
+                                            isCompleted ? "text-emerald-400" :
+                                                isCurrent ? "text-indigo-400" : "text-gray-600"
                                         )}>{s}</span>
                                     </div>
                                 );
                             })}
-                        </div>
-                    </div>
-
-                    {/* Pipeline Details */}
-                    <div className="mb-8 relative pl-2">
-                        {/* Connecting Line */}
-                        <div className="absolute left-[23px] top-4 bottom-4 w-0.5 bg-white/5 -z-10" />
-
-                        <div className="space-y-6">
-                            <StepItem
-                                title="Connect"
-                                description="Initialize environment"
-                                status={getStepStatus('connect', stage)}
-                                icon={<Server className="w-4 h-4" />}
-                            />
-                            <StepItem
-                                title="Plan"
-                                description="Generate & validate config"
-                                status={getStepStatus('plan', stage)}
-                                icon={<ShieldCheck className="w-4 h-4" />}
-                            />
-                            <StepItem
-                                title="Review"
-                                description="Resource & cost check"
-                                status={getStepStatus('review', stage)}
-                                icon={<Package className="w-4 h-4" />}
-                            />
-                            <StepItem
-                                title="Apply"
-                                description="Provision AWS resources"
-                                status={getStepStatus('apply', stage)}
-                                icon={<Play className="w-4 h-4" />}
-                            />
-                            <StepItem
-                                title="Complete"
-                                description="Verification & Handoff"
-                                status={getStepStatus('verify', stage)}
-                                icon={<CheckCircle2 className="w-4 h-4" />}
-                            />
                         </div>
                     </div>
 

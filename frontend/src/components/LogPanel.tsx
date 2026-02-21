@@ -56,29 +56,45 @@ export function LogPanel({ logs, isOpen, isExpanded, onToggleExpand, onClose, st
             </div>
 
             {/* Content */}
-            <div className="flex-1 bg-black/90 p-4 overflow-y-auto custom-scrollbar text-xs">
+            <div className="flex-1 bg-[#0a0a0f] border-t border-white/5 p-3 overflow-y-auto custom-scrollbar text-xs">
                 {logs.length === 0 ? (
                     <div className="h-full flex flex-col items-center justify-center text-gray-600 space-y-2 opacity-50">
-                        <p>No logs available.</p>
+                        <Terminal className="w-6 h-6 mb-1 opacity-30" />
+                        <p className="text-xs">No deployment logs yet</p>
                     </div>
                 ) : (
-                    <div className="space-y-1">
-                        {logs.map((log) => (
-                            <div key={log.id} className="flex gap-3">
-                                <span className="text-gray-600 w-16 shrink-0 select-none">{log.timestamp}</span>
-                                <span className={cn(
-                                    "flex-1 break-all",
-                                    log.type === 'info' && "text-gray-300",
-                                    log.type === 'success' && "text-green-400",
-                                    log.type === 'warning' && "text-yellow-400",
-                                    log.type === 'error' && "text-red-400"
-                                )}>
-                                    {log.type === 'success' && '✓ '}
-                                    {log.type === 'error' && '✗ '}
-                                    {log.message}
-                                </span>
-                            </div>
-                        ))}
+                    <div className="font-mono space-y-0.5">
+                        {logs.map((log) => {
+                            const isSection = log.message.startsWith('─');
+                            const isError = log.type === 'error';
+
+                            // Skip separator lines
+                            if (isSection) return null;
+
+                            return (
+                                <div
+                                    key={log.id}
+                                    className={cn(
+                                        "px-2 py-1 flex gap-2 items-start rounded",
+                                        isError && "bg-red-500/10 border-l-2 border-red-500/50",
+                                        log.type === 'success' && "text-emerald-400"
+                                    )}
+                                >
+                                    <span className="text-gray-600 w-[50px] shrink-0 select-none text-[10px] pt-0.5">
+                                        {log.timestamp}
+                                    </span>
+                                    <span className={cn(
+                                        "flex-1 leading-relaxed text-[11px]",
+                                        log.type === 'info' && "text-gray-400",
+                                        log.type === 'success' && "text-emerald-400",
+                                        log.type === 'warning' && "text-amber-300",
+                                        log.type === 'error' && "text-red-400"
+                                    )}>
+                                        {log.message}
+                                    </span>
+                                </div>
+                            );
+                        })}
                         <div ref={logsEndRef} />
                     </div>
                 )}
