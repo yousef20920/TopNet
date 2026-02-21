@@ -1,153 +1,42 @@
-# TopNet
+# TopNet - AI Cloud Infrastructure Builder ☁️
 
-> Natural-Language Cloud Network Topology Copilot for Individuals & Small Startups
+**TopNet** is a simple AI-powered tool that lets you design and deploy your own cloud infrastructure just by typing what you want in plain English. No coding or deep technical cloud knowledge required!
 
-Turn plain-English infrastructure descriptions into validated, deployable AWS architectures. Perfect for freelancers, hobbyists, and early-stage startups who need real infrastructure without enterprise complexity.
+![TopNet Dashboard](./screenshot.png)
 
-## What You Can Build
+## What does it do? 🤔
 
-Perfect for the most common AWS use cases:
+Imagine you want to start a blog, launch a new app, or host a multiplayer game server. Usually, you'd need to learn complicated cloud systems and networking rules. With TopNet, it's as easy as chatting:
 
-- 📝 **WordPress / Blogs** - CMS with MySQL and load balancer
-- 🚀 **Startup MVPs** - Scalable backend APIs with PostgreSQL
-- 🎮 **Game Servers** - Minecraft, Valheim, or other multiplayer games
-- 🔒 **Personal VPNs** - Secure browsing while traveling
-- 🎨 **Portfolios** - Dynamic websites with contact forms and databases
-- 💼 **Dev Environments** - Staging and production setups
+1. **You describe what you want:** "I need a WordPress blog with a database," or "Set up a Minecraft server."
+2. **TopNet draws it for you:** It instantly generates a clean visual map of your required servers and databases.
+3. **It double-checks everything:** TopNet automatically ensures your setup is secure and shows you estimated monthly costs.
+4. **Deploy with one click:** Once you're happy with the diagram, TopNet magically sets it all up for you in the real world (using AWS)!
 
-## Features
+## What can I build with it? 🌍
 
-- 🗣️ **Natural Language Input** - Describe your infrastructure in plain English via AI chat
-- 📊 **Visual Graph Editor** - Interactive topology visualization with React Flow
-- ✅ **Security Validation** - Automatic checks for overlapping CIDRs, orphaned nodes, security issues
-- 💰 **Cost Estimation** - See estimated monthly AWS costs before deploying
-- 🚀 **One-Click Deploy** - Deploy directly to AWS with Terraform
-- 📈 **AWS Monitoring** - Real-time dashboard for deployed resources
+- 📝 **WordPress / Blogs** - Easily set up a robust website to share your content.
+- 🚀 **Web Apps** - Get the backend for your new startup running smoothly.
+- 🎮 **Game Servers** - Host a Minecraft or Valheim game dedicated for you and your friends.
+- 🔒 **Personal VPNs** - Set up a quick, secure connection for safe web browsing anywhere.
 
-## What's Currently Supported
+## How to try it yourself 🚀
 
-**AWS Services:**
-- ✅ EC2 instances (web servers, app servers, game servers, VPNs)
-- ✅ RDS databases (PostgreSQL, MySQL)
-- ✅ Application Load Balancers
-- ✅ VPCs with public/private subnets
-- ✅ Security groups and networking
-- ✅ Multi-AZ high availability
-
-**Not Yet Supported:**
-- ❌ S3 + CloudFront (static websites)
-- ❌ Lambda (serverless functions)
-- ❌ DynamoDB (NoSQL databases)
-- ❌ EventBridge (scheduled jobs)
-
-## Quick Start
+To get TopNet running on your own computer:
 
 ### Prerequisites
-
 - Python 3.10+
 - Node.js 18+
-- Terraform CLI (for deployment)
-- AWS credentials configured (for deployment)
+- Terraform (If you want to actually deploy your creations)
 
-### Installation
+### Install and Start
+
+Just open up your terminal and run these commands:
 
 ```bash
-# Clone the repo
-git clone https://github.com/yousef20920/TopNet.git
+git clone https://github.com/yousefmaher/TopNet.git
 cd TopNet
-
-# Install and run everything
 ./start.sh
 ```
 
-Or manually:
-
-```bash
-# Backend
-cd backend
-python3 -m venv .venv
-source .venv/bin/activate  # On Windows: .venv\Scripts\activate
-pip install -e .
-uvicorn app.main:app --port 3001 --reload
-
-# Frontend (in another terminal)
-cd frontend
-npm install
-npm run dev
-```
-
-### AWS Deployment Setup
-
-To enable deployment to AWS:
-
-1. **Install Terraform CLI**
-   ```bash
-   # macOS
-   brew install terraform
-   
-   # Or download from https://terraform.io/downloads
-   ```
-
-2. **Configure AWS Credentials**
-   ```bash
-   # Option 1: AWS CLI
-   aws configure
-   
-   # Option 2: Environment variables
-   export AWS_ACCESS_KEY_ID="your_access_key"
-   export AWS_SECRET_ACCESS_KEY="your_secret_key"
-   export AWS_DEFAULT_REGION="us-east-1"
-   ```
-
-3. **Deploy!**
-   - Generate a topology
-   - Click "🚀 Deploy to AWS"
-   - Review the plan
-   - Click "Apply" to deploy
-
-### Access
-
-- **Frontend**: http://localhost:5173
-- **Backend API**: http://localhost:3001
-- **API Docs**: http://localhost:3001/docs
-
-## Project Structure
-
-```
-TopNet/
-├── backend/                 # Python FastAPI backend
-│   ├── app/
-│   │   ├── core/           # Types & data structures
-│   │   ├── api/            # REST endpoints
-│   │   ├── builder/        # Spec → Graph builder
-│   │   ├── validation/     # Validation passes
-│   │   └── terraform/      # Terraform generation
-│   └── pyproject.toml
-├── frontend/               # React + TypeScript frontend
-│   ├── src/
-│   │   ├── components/     # React components
-│   │   ├── api/            # API client
-│   │   └── types/          # TypeScript types
-│   └── package.json
-└── start.sh               # Run both servers
-```
-
-## Tech Stack
-
-| Layer | Technology |
-|-------|------------|
-| Frontend | React, TypeScript, React Flow, Tailwind CSS |
-| Backend | Python, FastAPI, Pydantic, NetworkX |
-| IaC Output | Terraform JSON |
-
-## Roadmap
-
-- [x] **Phase 1** - Skeleton & types, hardcoded topology, graph visualization
-- [x] **Phase 2** - Spec → Graph builder, NL parsing stubs
-- [x] **Phase 3** - Validation passes (CIDR overlap, orphaned nodes, reachability)
-- [x] **Phase 4** - Terraform generation for AWS
-- [x] **Phase 5** - Polish, better layout, editable properties
-
-## License
-
-MIT
+Once it's running, open your web browser and visit **http://localhost:5173** to start building!
